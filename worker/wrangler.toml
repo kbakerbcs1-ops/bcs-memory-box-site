@@ -1,0 +1,16 @@
+name = "bcs-memory-box-trial"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# Secrets (set with `wrangler secret put NAME` after deploying):
+#   ASSEMBLYAI_API_KEY   — for transcription
+#   ANTHROPIC_API_KEY    — for cleanup
+#   RESEND_API_KEY       — for email delivery
+#
+# Once deployed, this worker is reachable at:
+#   https://bcs-memory-box-trial.<your-cloudflare-subdomain>.workers.dev
+#
+# The homepage at www.bcsmemorybox.com posts to this worker's URL.
+
+[observability]
+enabled = true

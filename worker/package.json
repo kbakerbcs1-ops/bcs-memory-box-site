@@ -1,0 +1,15 @@
+{
+  "name": "bcs-memory-box-trial",
+  "version": "0.1.0",
+  "description": "Backend Worker for the BCS Memory Box free-trial flow.",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
