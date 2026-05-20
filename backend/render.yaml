@@ -1,0 +1,21 @@
+# Render Blueprint for BCS Memory Box trial backend
+# When you connect this repo to Render, it auto-detects this file
+# and uses it to configure the service.
+
+services:
+  - type: web
+    name: bcs-memory-box-trial
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: ASSEMBLYAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
