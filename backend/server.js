@@ -162,7 +162,7 @@ paragraphs +
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'BCS Memory Box <sample@send.bcsmemorybox.com>',
+      from: 'BCS Memory Box <sample@bcsmemorybox.com>',
       to: toEmail,
       reply_to: 'kbakerbcs1@bcsmemorybox.com',
       subject: 'Here is your Memory Box sample',
