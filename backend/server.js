@@ -13,11 +13,19 @@ const upload = multer({
 });
 
 const PORT = process.env.PORT || 3000;
-const ALLOWED_ORIGIN = 'https://www.bcsmemorybox.com';
+const ALLOWED_ORIGINS = new Set([
+  'https://www.bcsmemorybox.com',
+  'https://bcsmemorybox.com',
+]);
 
-// CORS middleware
+// CORS middleware — allow both the www and bare domain (GitHub Pages
+// redirects www → bare, so browser requests come from the bare origin).
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
