@@ -514,6 +514,186 @@
     </div>
 </section>
 
+<!-- TRY IT FREE -->
+<style>
+.try-free{background:#faf7f2;padding:64px 0;}
+.try-free .container{max-width:680px;}
+.trial-widget{background:#fff;border-radius:8px;padding:32px;margin-top:32px;box-shadow:0 2px 12px rgba(0,0,0,0.06);}
+.trial-widget input[type="text"],
+.trial-widget input[type="email"]{width:100%;box-sizing:border-box;padding:14px 16px;font-family:Georgia,serif;font-size:18px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:12px;background:#fff;color:#2a2520;}
+.trial-widget input:focus{outline:none;border-color:#8b5a2b;}
+.trial-btn-large{display:block;width:100%;margin-top:8px;padding:16px;font-size:18px;cursor:pointer;border:none;border-radius:4px;background:#8b5a2b;color:#fff;font-family:Georgia,serif;}
+.trial-btn-large:hover{background:#6f4720;}
+.trial-btn-large:disabled{background:#bbb;cursor:not-allowed;}
+.trial-hint{margin-top:12px;color:#777;font-size:15px;text-align:center;}
+.trial-prompt{font-size:19px;text-align:center;margin-bottom:24px;font-style:italic;color:#5a4a3a;}
+.trial-record-btn{display:block;margin:24px auto;width:96px;height:96px;border-radius:50%;background:#c0392b;color:#fff;font-size:32px;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(192,57,43,0.3);transition:all .2s;}
+.trial-record-btn:hover{transform:scale(1.05);}
+.trial-record-btn.recording{background:#1a1a1a;animation:pulse 1.2s infinite;}
+@keyframes pulse{0%,100%{box-shadow:0 4px 16px rgba(26,26,26,0.3);}50%{box-shadow:0 4px 24px rgba(192,57,43,0.6);}}
+.trial-timer{text-align:center;font-family:Georgia,serif;font-size:28px;color:#5a4a3a;margin-top:16px;}
+.trial-timer.over{color:#c0392b;}
+.trial-buttons-row{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap;}
+.trial-buttons-row button{flex:1;min-width:140px;padding:14px;font-size:17px;border-radius:4px;border:none;cursor:pointer;font-family:Georgia,serif;}
+.trial-buttons-row .btn-secondary{background:#e8dfc9;color:#2a2520;}
+.trial-buttons-row .btn-primary{background:#8b5a2b;color:#fff;}
+.trial-buttons-row .btn-primary:hover{background:#6f4720;}
+.trial-buttons-row .btn-secondary:hover{background:#d6c9a8;}
+.trial-spinner{width:56px;height:56px;margin:24px auto;border:4px solid #e8dfc9;border-top-color:#8b5a2b;border-radius:50%;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.trial-success{font-size:19px;color:#2a5a2a;background:#eaf5ea;padding:20px;border-radius:4px;border-left:4px solid #2a5a2a;}
+.trial-error{color:#c0392b;background:#fcecea;padding:16px;border-radius:4px;border-left:4px solid #c0392b;}
+.trial-widget audio{width:100%;margin:16px 0;}
+</style>
+
+<section class="try-free">
+    <div class="container">
+        <div class="section-eyebrow">Try it free — no payment, no signup</div>
+        <h2>Hear what 90 seconds of your story sounds like.</h2>
+        <p>Tell us one memory. We'll polish it and email it to your inbox in a couple minutes — a small preview of what your full memoir would look like.</p>
+
+        <div id="trial-widget" class="trial-widget">
+            <div id="trial-step-1">
+                <input type="text" id="trial-name" placeholder="Your first name (optional)" autocomplete="given-name" />
+                <input type="email" id="trial-email" placeholder="Your email address" autocomplete="email" required />
+                <button id="trial-start" class="trial-btn-large">Start recording</button>
+                <p class="trial-hint">Your browser may ask for microphone permission — click "Allow."</p>
+            </div>
+
+            <div id="trial-step-2" hidden>
+                <p class="trial-prompt">Tell us a memory — a person, a place, a moment that matters.</p>
+                <button id="trial-record" class="trial-record-btn" title="Tap to record">●</button>
+                <div id="trial-timer" class="trial-timer">0:00 / 1:30</div>
+                <p class="trial-hint">Up to 90 seconds. Tap the red button again to stop.</p>
+            </div>
+
+            <div id="trial-step-3" hidden>
+                <p>Sounds good? Send it to your inbox, or record again.</p>
+                <audio id="trial-preview" controls></audio>
+                <div class="trial-buttons-row">
+                    <button id="trial-redo" class="btn-secondary">Record again</button>
+                    <button id="trial-send" class="btn-primary">Send it to me</button>
+                </div>
+            </div>
+
+            <div id="trial-step-4" hidden>
+                <div class="trial-spinner"></div>
+                <p style="text-align:center;">Polishing your story — this takes about a minute. Don't close the page.</p>
+            </div>
+
+            <div id="trial-step-5" hidden>
+                <p class="trial-success">Your sample is on its way. Check your inbox in a couple minutes (look for an email from BCS Memory Box). Thank you for trying.</p>
+            </div>
+
+            <div id="trial-step-6" hidden>
+                <p class="trial-error" id="trial-error-msg">Something went wrong. Please try again.</p>
+                <button id="trial-retry" class="btn-secondary trial-btn-large">Start over</button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+(function(){
+  var TRIAL_ENDPOINT = 'https://bcs-memory-box-site.onrender.com/trial';
+  var MAX_SECONDS = 90;
+
+  function $(id){return document.getElementById(id);}
+  function show(step){
+    for(var i=1;i<=6;i++){
+      var el=$('trial-step-'+i);
+      if(el) el.hidden = (i!==step);
+    }
+  }
+
+  var mediaRecorder=null, chunks=[], audioBlob=null, audioUrl=null, timerInterval=null, secondsElapsed=0;
+
+  $('trial-start').addEventListener('click', async function(){
+    var email = $('trial-email').value.trim();
+    if(!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){
+      alert('Please enter a valid email address.');
+      $('trial-email').focus();
+      return;
+    }
+    try{
+      var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      mediaRecorder = new MediaRecorder(stream);
+      chunks=[];
+      mediaRecorder.ondataavailable = function(e){chunks.push(e.data);};
+      mediaRecorder.onstop = function(){
+        audioBlob = new Blob(chunks,{type: mediaRecorder.mimeType || 'audio/webm'});
+        audioUrl = URL.createObjectURL(audioBlob);
+        $('trial-preview').src = audioUrl;
+        stream.getTracks().forEach(function(t){t.stop();});
+        show(3);
+      };
+      show(2);
+    }catch(err){
+      alert("Couldn't access your microphone. Please check that you allowed microphone permission in your browser, then try again.");
+      console.error(err);
+    }
+  });
+
+  $('trial-record').addEventListener('click', function(){
+    if(!mediaRecorder) return;
+    if(mediaRecorder.state==='inactive'){
+      mediaRecorder.start();
+      $('trial-record').classList.add('recording');
+      secondsElapsed=0;
+      $('trial-timer').textContent='0:00 / 1:30';
+      $('trial-timer').classList.remove('over');
+      timerInterval = setInterval(function(){
+        secondsElapsed++;
+        var m=Math.floor(secondsElapsed/60), s=secondsElapsed%60;
+        $('trial-timer').textContent = m+':'+(s<10?'0':'')+s+' / 1:30';
+        if(secondsElapsed>=MAX_SECONDS){
+          mediaRecorder.stop();
+          clearInterval(timerInterval);
+          $('trial-record').classList.remove('recording');
+        }
+      },1000);
+    } else if(mediaRecorder.state==='recording'){
+      mediaRecorder.stop();
+      clearInterval(timerInterval);
+      $('trial-record').classList.remove('recording');
+    }
+  });
+
+  $('trial-redo').addEventListener('click', function(){
+    if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
+    audioBlob=null;
+    show(2);
+  });
+
+  $('trial-send').addEventListener('click', async function(){
+    if(!audioBlob){return;}
+    show(4);
+    var fd = new FormData();
+    fd.append('audio', audioBlob, 'recording.webm');
+    fd.append('email', $('trial-email').value.trim());
+    fd.append('name', $('trial-name').value.trim());
+    try{
+      var resp = await fetch(TRIAL_ENDPOINT,{method:'POST', body:fd});
+      var data = await resp.json();
+      if(!resp.ok || !data.success){
+        throw new Error(data.error || 'Request failed');
+      }
+      show(5);
+    }catch(err){
+      console.error('Trial send error:', err);
+      $('trial-error-msg').textContent = 'Something went wrong: ' + (err.message || 'Unknown error') + '. Please try again, or email Ken directly at kbakerbcs1@bcsmemorybox.com.';
+      show(6);
+    }
+  });
+
+  $('trial-retry').addEventListener('click', function(){
+    if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
+    audioBlob=null;
+    show(1);
+  });
+})();
+</script>
+
 <!-- FINAL CTA -->
 <section class="final-cta">
     <h2>Ready to start?</h2>
