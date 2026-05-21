@@ -64,7 +64,7 @@ app.post('/trial', upload.single('audio'), async (req, res) => {
         'Authorization': process.env.ASSEMBLYAI_API_KEY,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ audio_url: upload_url, language_code: 'en' }),
+      body: JSON.stringify({ audio_url: upload_url, language_code: 'en', speech_model: 'universal-2' }),
     });
     if (!submitResp.ok) throw new Error('Transcription submit failed: ' + await submitResp.text());
     const { id: transcriptId } = await submitResp.json();
