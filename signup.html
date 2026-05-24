@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get Started — BCS Memory Box</title>
+<meta name="description" content="Start your memoir. Sign up for Your Story ($125) — a polished life story document in your own voice.">
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{font-family:Georgia, 'Times New Roman', serif;color:#2a2520;background:#faf7f2;line-height:1.6;}
+  body{min-height:100vh;display:flex;flex-direction:column;}
+  header{padding:24px 32px;border-bottom:1px solid #e8dfc9;background:#fff;}
+  header a{color:#8b5a2b;text-decoration:none;font-size:20px;font-weight:bold;}
+  header a:hover{text-decoration:underline;}
+  main{flex:1;display:flex;align-items:center;justify-content:center;padding:48px 24px;}
+  .card{background:#fff;border-radius:8px;padding:48px;max-width:540px;width:100%;box-shadow:0 2px 12px rgba(0,0,0,0.06);}
+  .eyebrow{font-size:14px;color:#8b5a2b;letter-spacing:.15em;text-transform:uppercase;margin-bottom:8px;font-weight:bold;}
+  h1{font-size:34px;line-height:1.15;margin-bottom:16px;color:#2a2520;}
+  .lead{font-size:18px;color:#5a4a3a;margin-bottom:32px;}
+  .price-pill{display:inline-block;background:#faf7f0;color:#8b5a2b;padding:6px 14px;border-radius:999px;font-weight:bold;font-size:15px;margin-bottom:24px;}
+  label{display:block;margin-bottom:8px;font-size:15px;color:#5a4a3a;font-weight:bold;}
+  input[type="text"],input[type="email"]{
+    width:100%;padding:14px 16px;font-family:Georgia,serif;font-size:17px;
+    border:1px solid #d4cab5;border-radius:4px;margin-bottom:20px;background:#fff;color:#2a2520;
+  }
+  input:focus{outline:none;border-color:#8b5a2b;}
+  button{
+    width:100%;padding:16px;font-family:Georgia,serif;font-size:18px;font-weight:bold;
+    background:#8b5a2b;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-top:8px;
+  }
+  button:hover{background:#6f4720;}
+  button:disabled{background:#bbb;cursor:not-allowed;}
+  .hint{font-size:14px;color:#777;text-align:center;margin-top:16px;}
+  .error{background:#fcecea;border-left:4px solid #c0392b;padding:14px 18px;color:#c0392b;border-radius:4px;margin-bottom:24px;font-size:15px;}
+  .success{background:#eaf5ea;border-left:4px solid #2a5a2a;padding:18px;color:#2a5a2a;border-radius:4px;font-size:16px;}
+  .success a{color:#2a5a2a;font-weight:bold;}
+  .what-you-get{background:#faf7f0;border-left:4px solid #8b5a2b;padding:18px 22px;margin:24px 0;font-size:15px;color:#5a4a3a;}
+  .what-you-get strong{color:#2a2520;}
+  .what-you-get ul{margin:8px 0 0 20px;}
+  .what-you-get li{margin-bottom:4px;}
+  footer{text-align:center;padding:24px;color:#999;font-size:13px;}
+  footer a{color:#999;}
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">BCS Memory Box</a>
+</header>
+
+<main>
+  <div class="card">
+    <div class="eyebrow">Start Your Story</div>
+    <h1>Tell us who you are.</h1>
+    <p class="lead">Just your name and email. We'll create your account and take you to checkout.</p>
+
+    <span class="price-pill">Your Story — $125</span>
+
+    <div class="what-you-get">
+      <strong>What you get:</strong>
+      <ul>
+        <li>A polished memoir document, in your voice</li>
+        <li>Organized into the four sections of your life</li>
+        <li>Record at your own pace, on the phone you already own</li>
+        <li>Two rounds of revisions included</li>
+      </ul>
+    </div>
+
+    <div id="error-box" class="error" style="display:none;"></div>
+    <div id="success-box" class="success" style="display:none;"></div>
+
+    <form id="signup-form">
+      <label for="name">Your first name</label>
+      <input type="text" id="name" name="name" autocomplete="given-name" required placeholder="e.g. Margaret" />
+
+      <label for="email">Email address</label>
+      <input type="email" id="email" name="email" autocomplete="email" required placeholder="your@email.com" />
+
+      <button type="submit" id="submit-btn">Continue to Checkout</button>
+      <p class="hint">By continuing you'll be taken to a secure credit card page. No account password required.</p>
+    </form>
+  </div>
+</main>
+
+<footer>
+  <p>BCS Memory Box · Ken Baker · <a href="mailto:kbakerbcs1@bcsmemorybox.com">kbakerbcs1@bcsmemorybox.com</a></p>
+</footer>
+
+<script>
+  // Backend API base — the live Render service
+  var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+
+  var form = document.getElementById('signup-form');
+  var errBox = document.getElementById('error-box');
+  var sucBox = document.getElementById('success-box');
+  var btn = document.getElementById('submit-btn');
+
+  function showError(msg) {
+    errBox.textContent = msg;
+    errBox.style.display = 'block';
+    sucBox.style.display = 'none';
+  }
+  function showSuccess(html) {
+    sucBox.innerHTML = html;
+    sucBox.style.display = 'block';
+    errBox.style.display = 'none';
+  }
+
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    errBox.style.display = 'none';
+    sucBox.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Creating your account…';
+
+    var name = document.getElementById('name').value.trim();
+    var email = document.getElementById('email').value.trim();
+
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, email: email }),
+      });
+      var data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.error || 'Sign-up failed.');
+      }
+
+      // TODO: once Stripe is wired up, redirect to the Stripe Checkout URL.
+      // For now, show a friendly placeholder so we can verify the flow works.
+      if (data.alreadyPaid) {
+        showSuccess(
+          '<strong>Welcome back, ' + escapeHtml(name) + '!</strong><br><br>' +
+          'You already have an account. ' +
+          '<a href="' + data.portalUrl + '">Open your story →</a>'
+        );
+      } else {
+        showSuccess(
+          '<strong>Account created.</strong><br><br>' +
+          'Stripe checkout is being set up — once it is live, this page will redirect you to a secure payment screen automatically. ' +
+          'For now, your account is saved and Ken has been notified.<br><br>' +
+          '<small>Your access token (save this): <code style="background:#fff;padding:2px 6px;border-radius:3px;font-size:13px;">' +
+          escapeHtml(data.accessToken) +
+          '</code></small>'
+        );
+      }
+      btn.style.display = 'none';
+    } catch (err) {
+      console.error('Signup error:', err);
+      showError(err.message || 'Something went wrong. Please try again, or email Ken directly at kbakerbcs1@bcsmemorybox.com.');
+      btn.disabled = false;
+      btn.textContent = 'Continue to Checkout';
+    }
+  });
+
+  function escapeHtml(s) {
+    var div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+</script>
+
+</body>
+</html>

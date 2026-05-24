@@ -1,15 +1,19 @@
-// BCS Memory Box — free-trial backend (Render version).
-// Receives a 90-second audio recording + email from the homepage,
-// transcribes via AssemblyAI, cleans up via Claude, and emails the
-// polished result back via Resend.
+// BCS Memory Box — backend service.
+// Originally: free-trial endpoint only.
+// V2 (May 2026): customer portal — signup, recording uploads, automated
+// memoir cleanup, customer/admin dashboards.
 
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
+
+const db = require('./lib/db');
+const customerRoutes = require('./routes/customer');
 
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max for trial
 });
 
 const PORT = process.env.PORT || 3000;
@@ -18,25 +22,42 @@ const ALLOWED_ORIGINS = new Set([
   'https://bcsmemorybox.com',
 ]);
 
-// CORS middleware — allow both the www and bare domain (GitHub Pages
-// redirects www → bare, so browser requests come from the bare origin).
+// ============================================================================
+// CORS — allow both www and bare domain. GitHub Pages redirects www → bare,
+// so browser requests come from the bare origin.
+// ============================================================================
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
 
-// Health check (Render hits this to confirm the service is up)
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'bcs-memory-box-trial' }));
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// ============================================================================
+// Health checks
+// ============================================================================
+app.get('/', (req, res) => res.json({
+  status: 'ok',
+  service: 'bcs-memory-box-portal',
+  version: '0.2.0',
+  db: db.enabled,
+}));
+app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 
-// The free-trial endpoint
+// ============================================================================
+// Customer portal API
+// ============================================================================
+app.use('/api/customer', customerRoutes);
+
+// ============================================================================
+// /trial — original free-trial endpoint (unchanged, still serves the homepage
+// recording widget for visitors who want to hear a 90-second sample).
+// ============================================================================
 app.post('/trial', upload.single('audio'), async (req, res) => {
   try {
     const audio = req.file;
@@ -183,6 +204,18 @@ function escapeHtml(text) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-app.listen(PORT, () => {
-  console.log('BCS Memory Box trial server listening on port ' + PORT);
-});
+// ============================================================================
+// Startup: run any pending database migrations, then start listening.
+// ============================================================================
+(async () => {
+  try {
+    await db.runMigrations();
+  } catch (err) {
+    console.error('[startup] migration error:', err.message);
+    console.error('[startup] starting server anyway — trial endpoint will still work without DB');
+  }
+  app.listen(PORT, () => {
+    console.log('BCS Memory Box portal server listening on port ' + PORT);
+    console.log('  db: ' + (db.enabled ? 'connected' : 'NOT CONFIGURED (DATABASE_URL missing)'));
+  });
+})();
