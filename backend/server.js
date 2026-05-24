@@ -11,6 +11,7 @@ const db = require('./lib/db');
 const customerRoutes = require('./routes/customer');
 const uploadRoutes   = require('./routes/upload');
 const devRoutes      = require('./routes/dev');
+const adminRoutes    = require('./routes/admin');
 
 const app = express();
 const upload = multer({
@@ -59,6 +60,9 @@ app.use('/api/customer/upload', uploadRoutes);
 
 // DEV ONLY — remove before public launch
 app.use('/api/dev', devRoutes);
+
+// Admin (Ken's dashboard)
+app.use('/api/admin', adminRoutes);
 
 // ============================================================================
 // /trial — original free-trial endpoint (unchanged, still serves the homepage

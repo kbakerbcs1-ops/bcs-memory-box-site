@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Admin · BCS Memory Box</title>
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{font-family:Georgia,'Times New Roman',serif;color:#2a2520;background:#faf7f2;line-height:1.5;}
+  body{min-height:100vh;display:flex;flex-direction:column;}
+  header{padding:18px 28px;border-bottom:1px solid #e8dfc9;background:#fff;display:flex;justify-content:space-between;align-items:center;}
+  header .brand{color:#8b5a2b;text-decoration:none;font-size:19px;font-weight:bold;}
+  header .meta{color:#5a4a3a;font-size:14px;}
+  header .meta a{color:#8b5a2b;margin-left:14px;cursor:pointer;text-decoration:underline;}
+  main{flex:1;padding:24px;max-width:1200px;margin:0 auto;width:100%;}
+
+  /* Login screen */
+  .login-card{max-width:420px;margin:80px auto;background:#fff;padding:36px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.06);}
+  .login-card h1{font-size:24px;margin-bottom:20px;}
+  .login-card label{display:block;font-size:13px;color:#5a4a3a;margin-bottom:6px;font-weight:bold;}
+  .login-card input{width:100%;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:14px;}
+  .login-card input:focus{outline:none;border-color:#8b5a2b;}
+  .login-card button{width:100%;padding:13px;font-family:Georgia,serif;font-size:16px;background:#8b5a2b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:bold;}
+  .login-card button:hover{background:#6f4720;}
+  .login-card button:disabled{background:#bbb;cursor:not-allowed;}
+  .err{background:#fcecea;border-left:4px solid #c0392b;padding:10px 14px;color:#c0392b;border-radius:4px;margin-bottom:14px;font-size:14px;}
+
+  /* Dashboard table */
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
+  h1{font-size:24px;}
+  .summary{color:#888;font-size:14px;}
+
+  table{width:100%;background:#fff;border-collapse:collapse;box-shadow:0 2px 12px rgba(0,0,0,0.04);border-radius:6px;overflow:hidden;}
+  th{text-align:left;padding:12px 14px;background:#f5efe0;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:#5a4a3a;border-bottom:1px solid #e8dfc9;}
+  td{padding:14px;border-bottom:1px solid #f0e8d4;font-size:14px;vertical-align:top;}
+  tr:hover td{background:#faf7f0;}
+  tr.clickable{cursor:pointer;}
+  .status-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:bold;}
+  .status-awaiting_payment{background:#fef6e7;color:#7c4a03;}
+  .status-recording{background:#eef4fb;color:#2c5e8d;}
+  .status-processing{background:#f5e8ff;color:#6b2c8d;}
+  .status-draft_ready{background:#eaf5ea;color:#2a5a2a;}
+  .status-delivered{background:#e0e0e0;color:#555;}
+  .muted{color:#888;font-size:13px;}
+
+  /* Customer detail */
+  .back-link{display:inline-block;color:#8b5a2b;text-decoration:none;font-size:14px;margin-bottom:14px;cursor:pointer;}
+  .back-link:hover{text-decoration:underline;}
+  .detail-card{background:#fff;border-radius:6px;padding:24px;margin-bottom:18px;box-shadow:0 2px 12px rgba(0,0,0,0.04);}
+  .detail-card h2{font-size:18px;margin-bottom:14px;color:#5a4a3a;}
+  .detail-row{display:flex;padding:6px 0;font-size:14px;}
+  .detail-row .label{width:160px;color:#888;}
+  .detail-row .val{flex:1;color:#2a2520;}
+  .detail-row .val code{background:#faf7f0;padding:2px 6px;border-radius:3px;font-size:12px;}
+
+  .recording-list{margin-top:8px;}
+  .recording-item{padding:10px 0;border-bottom:1px solid #f0e8d4;display:flex;justify-content:space-between;align-items:center;}
+  .recording-item:last-child{border-bottom:none;}
+  .recording-item .info{flex:1;}
+  .recording-item .actions{display:flex;gap:8px;}
+  .btn{display:inline-block;padding:8px 14px;font-size:13px;font-family:Georgia,serif;border:1px solid #8b5a2b;color:#8b5a2b;background:#fff;border-radius:4px;text-decoration:none;cursor:pointer;}
+  .btn:hover{background:#8b5a2b;color:#fff;}
+
+  .empty{padding:24px;text-align:center;color:#888;font-style:italic;}
+
+  .loading{text-align:center;padding:60px;color:#888;}
+  .spinner{width:36px;height:36px;margin:0 auto 12px;border:4px solid #e8dfc9;border-top-color:#8b5a2b;border-radius:50%;animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/">BCS Memory Box · Admin</a>
+  <div class="meta" id="header-meta"></div>
+</header>
+
+<main id="main">
+  <div class="loading"><div class="spinner"></div><p>Loading…</p></div>
+</main>
+
+<script>
+var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+var SESSION_KEY = 'bcs_admin_session';
+
+function getSession() { try { return localStorage.getItem(SESSION_KEY); } catch(e) { return null; } }
+function setSession(v) { try { localStorage.setItem(SESSION_KEY, v); } catch(e) {} }
+function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch(e) {} }
+
+function escapeHtml(s) { var d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function fmtDate(iso) { if(!iso) return ''; return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }
+function fmtSize(b) { b=+b||0; if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+
+async function api(path, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  var sess = getSession();
+  if (sess) opts.headers['x-admin-session'] = sess;
+  var resp = await fetch(API_BASE + path, opts);
+  if (resp.status === 401) {
+    clearSession();
+    showLogin('Your session expired. Please sign in again.');
+    throw new Error('Unauthorized');
+  }
+  var data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'API error');
+  return data;
+}
+
+// ============================================================================
+// Login view
+// ============================================================================
+function showLogin(errMsg) {
+  document.getElementById('header-meta').textContent = '';
+  document.getElementById('main').innerHTML =
+    '<div class="login-card">' +
+      '<h1>Sign in to admin</h1>' +
+      (errMsg ? '<div class="err">' + escapeHtml(errMsg) + '</div>' : '') +
+      '<div id="login-err"></div>' +
+      '<label for="pw">Admin password</label>' +
+      '<input type="password" id="pw" autofocus autocomplete="current-password" />' +
+      '<button id="login-btn">Sign in</button>' +
+    '</div>';
+  document.getElementById('login-btn').addEventListener('click', doLogin);
+  document.getElementById('pw').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+}
+
+async function doLogin() {
+  var pw = document.getElementById('pw').value;
+  var errEl = document.getElementById('login-err');
+  var btn = document.getElementById('login-btn');
+  errEl.innerHTML = '';
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  try {
+    var resp = await fetch(API_BASE + '/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    var data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Login failed');
+    setSession(data.sessionToken);
+    showDashboard();
+  } catch (e) {
+    errEl.innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+  }
+}
+
+function doLogout() {
+  api('/api/admin/logout', { method: 'POST' }).catch(()=>{});
+  clearSession();
+  showLogin();
+}
+
+// ============================================================================
+// Dashboard view (list of customers)
+// ============================================================================
+async function showDashboard() {
+  document.getElementById('header-meta').innerHTML = 'Signed in <a id="logout-link">Sign out</a>';
+  document.getElementById('logout-link').addEventListener('click', doLogout);
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading customers…</p></div>';
+
+  try {
+    var data = await api('/api/admin/customers');
+    var rows = data.customers || [];
+    var html =
+      '<div class="toolbar">' +
+        '<h1>Customers</h1>' +
+        '<div class="summary">' + rows.length + ' total</div>' +
+      '</div>';
+    if (rows.length === 0) {
+      html += '<div class="empty">No customers yet. As soon as someone signs up at /signup.html they\'ll appear here.</div>';
+    } else {
+      html += '<table><thead><tr>' +
+        '<th>Name</th><th>Email</th><th>Status</th><th>Recordings</th><th>Drafts</th><th>Signed up</th><th>Last activity</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function(c){
+        html += '<tr class="clickable" data-id="' + escapeHtml(c.id) + '">' +
+          '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
+          '<td>' + escapeHtml(c.email) + '</td>' +
+          '<td><span class="status-pill status-' + escapeHtml(c.status) + '">' + escapeHtml(c.status.replace(/_/g,' ')) + '</span></td>' +
+          '<td>' + c.recording_count + '</td>' +
+          '<td>' + c.draft_count + '</td>' +
+          '<td class="muted">' + fmtDate(c.created_at) + '</td>' +
+          '<td class="muted">' + fmtDate(c.updated_at) + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    document.getElementById('main').innerHTML = html;
+    document.querySelectorAll('tr.clickable').forEach(function(tr){
+      tr.addEventListener('click', function(){ showCustomer(tr.getAttribute('data-id')); });
+    });
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+// ============================================================================
+// Customer detail view
+// ============================================================================
+async function showCustomer(id) {
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading customer…</p></div>';
+  try {
+    var data = await api('/api/admin/customer/' + encodeURIComponent(id));
+    var c = data.customer;
+    var html = '<a class="back-link" id="back-link">← Back to all customers</a>';
+    html += '<div class="detail-card">';
+    html +=   '<h2>' + escapeHtml(c.name) + ' — <span style="font-weight:normal;color:#888;">' + escapeHtml(c.email) + '</span></h2>';
+    html +=   '<div class="detail-row"><div class="label">Status</div><div class="val"><span class="status-pill status-' + escapeHtml(c.status) + '">' + escapeHtml(c.status.replace(/_/g,' ')) + '</span></div></div>';
+    html +=   '<div class="detail-row"><div class="label">Signed up</div><div class="val">' + fmtDate(c.created_at) + '</div></div>';
+    html +=   '<div class="detail-row"><div class="label">Paid at</div><div class="val">' + (c.paid_at ? fmtDate(c.paid_at) : '<span class="muted">not yet</span>') + '</div></div>';
+    html +=   '<div class="detail-row"><div class="label">Customer ID</div><div class="val"><code>' + escapeHtml(c.id) + '</code></div></div>';
+    html +=   '<div class="detail-row"><div class="label">Access token</div><div class="val"><code>' + escapeHtml(c.access_token.slice(0,8)) + '…</code> <span class="muted">(URL: /yourstory.html?token=…)</span></div></div>';
+    if (c.stripe_payment_intent_id) {
+      html += '<div class="detail-row"><div class="label">Stripe payment</div><div class="val"><code>' + escapeHtml(c.stripe_payment_intent_id) + '</code></div></div>';
+    }
+    html += '</div>';
+
+    // Recordings
+    html += '<div class="detail-card">';
+    html +=   '<h2>Recordings (' + data.recordings.length + ')</h2>';
+    if (data.recordings.length === 0) {
+      html += '<div class="empty">No recordings uploaded yet.</div>';
+    } else {
+      html += '<div class="recording-list">';
+      data.recordings.forEach(function(r){
+        html += '<div class="recording-item">' +
+          '<div class="info">' +
+            '<strong>' + escapeHtml(r.original_filename || 'recording') + '</strong> ' +
+            '<span class="muted">' + fmtSize(r.size_bytes) + ' · ' + fmtDate(r.created_at) + '</span><br>' +
+            '<span class="muted">Transcript: ' + escapeHtml(r.transcript_status) +
+              (r.transcript_length ? ' (' + r.transcript_length + ' chars)' : '') +
+              (r.transcript_error ? ' — error: ' + escapeHtml(r.transcript_error) : '') +
+            '</span>' +
+          '</div>' +
+          '<div class="actions">' +
+            '<a class="btn" href="' + API_BASE + '/api/admin/recording/' + r.id + '/download?session=' + encodeURIComponent(getSession()) + '" target="_blank">Download</a>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Drafts
+    html += '<div class="detail-card">';
+    html +=   '<h2>Drafts (' + data.drafts.length + ')</h2>';
+    if (data.drafts.length === 0) {
+      html += '<div class="empty">No drafts yet. Drafts get generated when the auto-cleanup pipeline runs (once that\'s built).</div>';
+    } else {
+      html += '<div class="recording-list">';
+      data.drafts.forEach(function(d){
+        html += '<div class="recording-item">' +
+          '<div class="info">' +
+            '<strong>Version ' + d.version + '</strong> ' +
+            '<span class="status-pill status-' + escapeHtml(d.status) + '">' + escapeHtml(d.status.replace(/_/g,' ')) + '</span><br>' +
+            '<span class="muted">Created ' + fmtDate(d.created_at) +
+              (d.content_length ? ' · ' + d.content_length + ' chars' : '') +
+              (d.approved_at ? ' · approved ' + fmtDate(d.approved_at) : '') +
+              (d.delivered_at ? ' · delivered ' + fmtDate(d.delivered_at) : '') +
+            '</span>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    document.getElementById('main').innerHTML = html;
+    document.getElementById('back-link').addEventListener('click', showDashboard);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+// ============================================================================
+// Boot
+// ============================================================================
+(function(){
+  if (getSession()) {
+    showDashboard();
+  } else {
+    showLogin();
+  }
+})();
+</script>
+
+</body>
+</html>
