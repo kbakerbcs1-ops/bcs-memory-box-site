@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Story — BCS Memory Box</title>
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{font-family:Georgia,'Times New Roman',serif;color:#2a2520;background:#faf7f2;line-height:1.6;}
+  body{min-height:100vh;display:flex;flex-direction:column;}
+  header{padding:20px 32px;border-bottom:1px solid #e8dfc9;background:#fff;display:flex;justify-content:space-between;align-items:center;}
+  header .brand{color:#8b5a2b;text-decoration:none;font-size:20px;font-weight:bold;}
+  header .brand:hover{text-decoration:underline;}
+  header .welcome{color:#5a4a3a;font-size:15px;}
+  main{flex:1;max-width:880px;margin:32px auto;padding:0 24px;width:100%;}
+
+  .status-bar{display:flex;gap:8px;background:#fff;border-radius:8px;padding:18px 24px;margin-bottom:32px;box-shadow:0 2px 12px rgba(0,0,0,0.04);flex-wrap:wrap;}
+  .step{flex:1;min-width:130px;text-align:center;padding:8px 6px;border-radius:4px;font-size:13px;color:#999;}
+  .step.done{color:#2a5a2a;background:#eaf5ea;}
+  .step.current{color:#8b5a2b;background:#faf7f0;font-weight:bold;}
+  .step .icon{display:inline-block;margin-right:4px;}
+
+  .card{background:#fff;border-radius:8px;padding:36px;margin-bottom:24px;box-shadow:0 2px 12px rgba(0,0,0,0.04);}
+  .eyebrow{font-size:13px;color:#8b5a2b;letter-spacing:.15em;text-transform:uppercase;font-weight:bold;margin-bottom:10px;}
+  h1{font-size:30px;line-height:1.2;margin-bottom:16px;color:#2a2520;}
+  h2{font-size:23px;line-height:1.25;margin-bottom:14px;color:#2a2520;margin-top:8px;}
+  p{margin-bottom:14px;color:#3a3530;font-size:17px;}
+  .muted{color:#888;font-size:15px;}
+
+  .sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:20px;}
+  .section-card{background:#faf7f0;border-left:4px solid #8b5a2b;padding:16px 18px;border-radius:4px;}
+  .section-card h3{font-size:16px;color:#8b5a2b;margin-bottom:6px;}
+  .section-card p{font-size:14px;color:#5a4a3a;margin-bottom:0;}
+
+  .recordings{margin-top:24px;}
+  .recording-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #f0e8d4;}
+  .recording-row:last-child{border-bottom:none;}
+  .recording-info{flex:1;}
+  .recording-name{font-weight:bold;color:#2a2520;font-size:15px;}
+  .recording-meta{font-size:13px;color:#888;margin-top:2px;}
+  .recording-status{font-size:13px;padding:3px 10px;border-radius:999px;font-weight:bold;}
+  .recording-status.pending{background:#f5f0e0;color:#8b5a2b;}
+  .recording-status.completed{background:#eaf5ea;color:#2a5a2a;}
+  .recording-status.error{background:#fcecea;color:#c0392b;}
+  .empty-recordings{padding:24px;text-align:center;color:#888;background:#faf7f0;border-radius:4px;font-style:italic;}
+
+  .upload-zone{margin-top:24px;border:2px dashed #d4cab5;padding:36px 24px;text-align:center;border-radius:6px;background:#faf7f0;}
+  .upload-zone p{margin-bottom:14px;color:#5a4a3a;}
+  .btn{display:inline-block;padding:14px 28px;font-family:Georgia,serif;font-size:17px;font-weight:bold;background:#8b5a2b;color:#fff;border:none;border-radius:4px;cursor:pointer;text-decoration:none;}
+  .btn:hover{background:#6f4720;}
+  .btn:disabled{background:#bbb;cursor:not-allowed;}
+  .btn-secondary{background:#e8dfc9;color:#2a2520;}
+  .btn-secondary:hover{background:#d6c9a8;}
+  .btn-large{padding:18px 36px;font-size:18px;display:block;margin:24px auto 0;}
+
+  .alert{padding:16px 20px;border-radius:6px;margin-bottom:16px;font-size:15px;}
+  .alert-warning{background:#fef6e7;border-left:4px solid #d97706;color:#7c4a03;}
+  .alert-error{background:#fcecea;border-left:4px solid #c0392b;color:#c0392b;}
+  .alert-success{background:#eaf5ea;border-left:4px solid #2a5a2a;color:#2a5a2a;}
+  .alert-info{background:#eef4fb;border-left:4px solid #2c5e8d;color:#2c5e8d;}
+
+  .loading{text-align:center;padding:48px;color:#888;}
+  .spinner{width:42px;height:42px;margin:0 auto 16px;border:4px solid #e8dfc9;border-top-color:#8b5a2b;border-radius:50%;animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  footer{text-align:center;padding:24px;color:#999;font-size:13px;}
+  footer a{color:#999;}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/">BCS Memory Box</a>
+  <div class="welcome" id="header-welcome"></div>
+</header>
+
+<main id="main">
+  <div class="loading">
+    <div class="spinner"></div>
+    <p>Loading your story…</p>
+  </div>
+</main>
+
+<footer>
+  <p>BCS Memory Box · Ken Baker · <a href="mailto:kbakerbcs1@bcsmemorybox.com">kbakerbcs1@bcsmemorybox.com</a></p>
+</footer>
+
+<script>
+var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+
+// Read token from query string (?token=xyz)
+function getToken() {
+  var params = new URLSearchParams(window.location.search);
+  return params.get('token');
+}
+
+function escapeHtml(s) {
+  var div = document.createElement('div');
+  div.textContent = s || '';
+  return div.innerHTML;
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+// Render the appropriate UI for a given customer status
+function renderStatusBar(status) {
+  var steps = [
+    { key: 'awaiting_payment', label: 'Account created', icon: '✓' },
+    { key: 'recording',         label: 'Payment complete', icon: '✓' },
+    { key: 'processing',        label: 'Recording',        icon: '🎙' },
+    { key: 'draft_ready',       label: 'Draft ready',      icon: '📄' },
+    { key: 'delivered',         label: 'Delivered',        icon: '🎁' },
+  ];
+  var order = ['awaiting_payment', 'recording', 'processing', 'draft_ready', 'delivered'];
+  var currentIdx = order.indexOf(status);
+  var html = '<div class="status-bar">';
+  steps.forEach(function(s, i){
+    var cls = 'step';
+    if (i < currentIdx) cls += ' done';
+    if (i === currentIdx) cls += ' current';
+    html += '<div class="' + cls + '"><span class="icon">' + s.icon + '</span>' + s.label + '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderAwaitingPayment(customer) {
+  return renderStatusBar(customer.status) +
+    '<div class="card">' +
+      '<div class="eyebrow">One step left</div>' +
+      '<h1>Your account is ready, ' + escapeHtml(customer.name) + '.</h1>' +
+      '<div class="alert alert-warning">' +
+        'Your account exists but payment for Your Story ($125) hasn\'t been completed yet. ' +
+        'Once Stripe checkout is wired up, you\'ll be able to complete payment right from here.' +
+      '</div>' +
+      '<p class="muted">Account: ' + escapeHtml(customer.email) + ' · Created ' + formatDate(customer.createdAt) + '</p>' +
+    '</div>';
+}
+
+function renderRecordingPage(data) {
+  var c = data.customer;
+  var recordings = data.recordings || [];
+  var html = renderStatusBar(c.status);
+  html += '<div class="card">';
+  html += '<div class="eyebrow">Welcome back</div>';
+  html += '<h1>Your story, ' + escapeHtml(c.name) + '.</h1>';
+  html += '<p>Record your memories on your phone whenever something comes to mind. Upload each recording here when you\'re done. Most people finish in 4-8 weeks.</p>';
+
+  // Four sections guide
+  html += '<h2 style="margin-top:32px;">The four sections to record</h2>';
+  html += '<div class="sections">' +
+    '<div class="section-card"><h3>1. Family and Origins</h3><p>Your parents and grandparents. Names, dates, where they came from, what they did.</p></div>' +
+    '<div class="section-card"><h3>2. Early Childhood</h3><p>Where you grew up, friends, school, the world you knew as a child.</p></div>' +
+    '<div class="section-card"><h3>3. Family Life</h3><p>Your children, marriage, vacations, traditions, the family you built.</p></div>' +
+    '<div class="section-card"><h3>4. Reflections</h3><p>Likes and dislikes, what people meant to you, how you see the world.</p></div>' +
+  '</div>';
+  html += '</div>';
+
+  // Recordings list
+  html += '<div class="card">';
+  html += '<h2>Your recordings (' + recordings.length + ')</h2>';
+  if (recordings.length === 0) {
+    html += '<div class="empty-recordings">No recordings yet. Upload your first one below.</div>';
+  } else {
+    html += '<div class="recordings">';
+    recordings.forEach(function(r) {
+      var statusClass = r.transcript_status === 'completed' ? 'completed' :
+                        r.transcript_status === 'error' ? 'error' : 'pending';
+      var statusLabel = r.transcript_status === 'completed' ? 'Ready' :
+                        r.transcript_status === 'error' ? 'Error' :
+                        r.transcript_status === 'transcribing' ? 'Processing' : 'Waiting';
+      html += '<div class="recording-row">' +
+        '<div class="recording-info">' +
+          '<div class="recording-name">' + escapeHtml(r.original_filename || 'Recording') + '</div>' +
+          '<div class="recording-meta">' + formatDate(r.created_at) + ' · ' + formatSize(r.size_bytes) + '</div>' +
+        '</div>' +
+        '<div class="recording-status ' + statusClass + '">' + statusLabel + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Upload zone (stubbed for V1 - awaits R2 wiring)
+  html += '<div class="card">';
+  html += '<h2>Upload a recording</h2>';
+  html += '<div class="upload-zone">' +
+    '<p style="font-size:18px;color:#5a4a3a;">Use the voice memo app on your phone. AirDrop or email the file to yourself, then upload it here.</p>' +
+    '<p class="muted" style="font-size:14px;margin-top:8px;">Coming next: tap to upload. Wiring file storage now.</p>' +
+    '<button class="btn" disabled style="margin-top:12px;">Upload audio file</button>' +
+  '</div>';
+  html += '</div>';
+
+  // Done button
+  if (recordings.length > 0) {
+    html += '<button class="btn btn-large" disabled>I\'m done — turn my recordings into a memoir</button>';
+    html += '<p style="text-align:center;color:#999;font-size:13px;margin-top:8px;">Available once upload is wired up</p>';
+  }
+
+  return html;
+}
+
+function renderProcessing(customer) {
+  return renderStatusBar(customer.status) +
+    '<div class="card">' +
+      '<div class="eyebrow">In progress</div>' +
+      '<h1>Your memoir is being prepared.</h1>' +
+      '<p>Thank you, ' + escapeHtml(customer.name) + '. Your recordings are being transcribed and polished into your memoir document. You\'ll get an email when it\'s ready for your review.</p>' +
+      '<div class="loading"><div class="spinner"></div><p>Usually takes a few hours.</p></div>' +
+    '</div>';
+}
+
+function renderDraftReady(customer) {
+  return renderStatusBar(customer.status) +
+    '<div class="card">' +
+      '<div class="eyebrow">Ready</div>' +
+      '<h1>Your draft is ready.</h1>' +
+      '<p>Ken has reviewed your initial draft. Download it below, read through it, and let us know if you\'d like any changes.</p>' +
+      '<button class="btn btn-large" disabled>Download your draft (.docx)</button>' +
+      '<p style="text-align:center;color:#999;font-size:13px;margin-top:8px;">Download functionality coming next</p>' +
+    '</div>';
+}
+
+function renderDelivered(customer) {
+  return renderStatusBar(customer.status) +
+    '<div class="card">' +
+      '<div class="eyebrow">Complete</div>' +
+      '<h1>Here is your memoir.</h1>' +
+      '<p>This is your final document. You can download it anytime. If you ever want to add photographs or order a hardcover book, let us know.</p>' +
+      '<button class="btn btn-large" disabled>Download your memoir (.docx)</button>' +
+    '</div>';
+}
+
+function renderError(msg) {
+  return '<div class="card">' +
+    '<h1>We couldn\'t load your story.</h1>' +
+    '<div class="alert alert-error">' + escapeHtml(msg) + '</div>' +
+    '<p class="muted">If this keeps happening, email <a href="mailto:kbakerbcs1@bcsmemorybox.com">kbakerbcs1@bcsmemorybox.com</a> with your access link and we\'ll sort it out.</p>' +
+  '</div>';
+}
+
+// Boot
+(async function() {
+  var token = getToken();
+  if (!token) {
+    document.getElementById('main').innerHTML = renderError('No access token in the URL. Make sure you\'re using the link from your welcome email.');
+    return;
+  }
+
+  try {
+    var resp = await fetch(API_BASE + '/api/customer/me?token=' + encodeURIComponent(token));
+    if (!resp.ok) {
+      var err = await resp.json().catch(function(){return {error:'Server error'};});
+      document.getElementById('main').innerHTML = renderError(err.error || ('Could not load (status ' + resp.status + ')'));
+      return;
+    }
+    var data = await resp.json();
+    if (!data.ok || !data.customer) {
+      document.getElementById('main').innerHTML = renderError('Account data missing.');
+      return;
+    }
+
+    // Set header
+    document.getElementById('header-welcome').textContent = 'Signed in as ' + data.customer.email;
+
+    // Pick the renderer based on status
+    var status = data.customer.status;
+    var html;
+    if (status === 'awaiting_payment') html = renderAwaitingPayment(data.customer);
+    else if (status === 'recording')   html = renderRecordingPage(data);
+    else if (status === 'processing')  html = renderProcessing(data.customer);
+    else if (status === 'draft_ready') html = renderDraftReady(data.customer);
+    else if (status === 'delivered')   html = renderDelivered(data.customer);
+    else html = renderError('Unknown status: ' + status);
+
+    document.getElementById('main').innerHTML = html;
+  } catch (e) {
+    console.error('yourstory load error:', e);
+    document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
+  }
+})();
+</script>
+
+</body>
+</html>

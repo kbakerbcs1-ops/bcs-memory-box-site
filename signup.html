@@ -134,7 +134,7 @@
         showSuccess(
           '<strong>Welcome back, ' + escapeHtml(name) + '!</strong><br><br>' +
           'You already have an account. ' +
-          '<a href="' + data.portalUrl + '">Open your story →</a>'
+          '<a href="/yourstory.html?token=' + encodeURIComponent(data.accessToken) + '">Open your story →</a>'
         );
       } else {
         showSuccess(

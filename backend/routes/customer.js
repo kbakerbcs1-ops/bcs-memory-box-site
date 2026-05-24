@@ -41,7 +41,7 @@ router.post('/signup', async (req, res) => {
           alreadyExists: true,
           alreadyPaid: true,
           accessToken: existing.access_token,
-          portalUrl: '/yourstory/' + existing.access_token,
+          portalUrl: '/yourstory.html?token=' + encodeURIComponent(existing.access_token),
           message: 'Welcome back. You already have an account — heading you to your story.',
         });
       }
