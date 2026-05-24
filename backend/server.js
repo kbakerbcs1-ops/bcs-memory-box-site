@@ -9,6 +9,8 @@ const path = require('path');
 
 const db = require('./lib/db');
 const customerRoutes = require('./routes/customer');
+const uploadRoutes   = require('./routes/upload');
+const devRoutes      = require('./routes/dev');
 
 const app = express();
 const upload = multer({
@@ -53,6 +55,10 @@ app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 // Customer portal API
 // ============================================================================
 app.use('/api/customer', customerRoutes);
+app.use('/api/customer/upload', uploadRoutes);
+
+// DEV ONLY — remove before public launch
+app.use('/api/dev', devRoutes);
 
 // ============================================================================
 // /trial — original free-trial endpoint (unchanged, still serves the homepage

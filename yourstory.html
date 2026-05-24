@@ -193,20 +193,22 @@ function renderRecordingPage(data) {
   }
   html += '</div>';
 
-  // Upload zone (stubbed for V1 - awaits R2 wiring)
+  // Upload zone — real, wired to /api/customer/upload
   html += '<div class="card">';
   html += '<h2>Upload a recording</h2>';
   html += '<div class="upload-zone">' +
-    '<p style="font-size:18px;color:#5a4a3a;">Use the voice memo app on your phone. AirDrop or email the file to yourself, then upload it here.</p>' +
-    '<p class="muted" style="font-size:14px;margin-top:8px;">Coming next: tap to upload. Wiring file storage now.</p>' +
-    '<button class="btn" disabled style="margin-top:12px;">Upload audio file</button>' +
+    '<p style="font-size:18px;color:#5a4a3a;">Use the voice memo app on your phone. AirDrop or email the file to this computer, then upload it here.</p>' +
+    '<p class="muted" style="font-size:14px;margin-top:8px;">Audio formats accepted: .m4a, .mp3, .wav, .aac, .webm. Up to 100 MB.</p>' +
+    '<input type="file" id="audio-file" accept="audio/*,.m4a,.mp3,.wav,.aac,.webm" style="display:none;" />' +
+    '<button class="btn" id="upload-btn" style="margin-top:12px;">Choose audio file</button>' +
+    '<p id="upload-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
   '</div>';
   html += '</div>';
 
-  // Done button
+  // Done button — only meaningful if there's at least one recording. Stubbed for now.
   if (recordings.length > 0) {
     html += '<button class="btn btn-large" disabled>I\'m done — turn my recordings into a memoir</button>';
-    html += '<p style="text-align:center;color:#999;font-size:13px;margin-top:8px;">Available once upload is wired up</p>';
+    html += '<p style="text-align:center;color:#999;font-size:13px;margin-top:8px;">Available once auto-cleanup pipeline is built</p>';
   }
 
   return html;
@@ -286,11 +288,69 @@ function renderError(msg) {
     else html = renderError('Unknown status: ' + status);
 
     document.getElementById('main').innerHTML = html;
+
+    // After render, wire the upload UI (only present on status=recording view).
+    bindUploadHandler();
   } catch (e) {
     console.error('yourstory load error:', e);
     document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
   }
 })();
+
+// Wire the file picker + upload POST.
+function bindUploadHandler() {
+  var btn = document.getElementById('upload-btn');
+  var fileInput = document.getElementById('audio-file');
+  var statusEl = document.getElementById('upload-status');
+  if (!btn || !fileInput) return; // not on the recording view
+
+  btn.addEventListener('click', function() {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async function() {
+    var file = fileInput.files[0];
+    if (!file) return;
+
+    var token = getToken();
+    if (!token) {
+      statusEl.textContent = 'No access token in URL — please use your welcome email link.';
+      statusEl.style.color = '#c0392b';
+      return;
+    }
+
+    // Disable while uploading
+    btn.disabled = true;
+    btn.textContent = 'Uploading… (' + formatSize(file.size) + ')';
+    statusEl.textContent = 'Sending to secure storage…';
+    statusEl.style.color = '#5a4a3a';
+
+    var fd = new FormData();
+    fd.append('audio', file, file.name);
+
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        body: fd,
+      });
+      var data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.error || ('Upload failed (status ' + resp.status + ')'));
+      }
+      statusEl.textContent = 'Uploaded! Refreshing your recordings…';
+      statusEl.style.color = '#2a5a2a';
+      // Reload the page to show the new recording in the list
+      setTimeout(function(){ window.location.reload(); }, 1200);
+    } catch (err) {
+      console.error('Upload error:', err);
+      statusEl.textContent = 'Upload failed: ' + (err.message || 'Unknown error');
+      statusEl.style.color = '#c0392b';
+      btn.disabled = false;
+      btn.textContent = 'Choose audio file';
+      fileInput.value = ''; // allow retry
+    }
+  });
+}
 </script>
 
 </body>
