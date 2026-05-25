@@ -129,4 +129,128 @@ router.get('/me', async (req, res) => {
   }
 });
 
+
+
+// ---------------------------------------------------------------------------
+// GET /api/customer/download?token=<access_token>
+// Streams the latest approved (or ready_for_review) .docx for this customer.
+// ---------------------------------------------------------------------------
+const storage = require('../lib/storage');
+
+router.get('/download', async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+
+    const customer = await db.queryOne(
+      'SELECT id, name FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const draft = await db.queryOne(
+      `SELECT id, version, docx_storage_key, status
+       FROM drafts
+       WHERE customer_id = $1 AND docx_storage_key IS NOT NULL
+         AND status IN ('delivered', 'approved', 'ready_for_review')
+       ORDER BY version DESC, created_at DESC
+       LIMIT 1`,
+      [customer.id]
+    );
+    if (!draft) return res.status(404).json({ error: 'No memoir document available yet.' });
+
+    const { stream, contentType, contentLength } =
+      await storage.getObjectStream(draft.docx_storage_key);
+    const safeName = (customer.name || 'memoir').replace(/[^A-Za-z0-9 _-]/g, '_');
+    res.setHeader('Content-Type',
+      contentType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Content-Disposition',
+      'attachment; filename="' + safeName + ' - Memory Box.docx"');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('[customer/download] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/request-revision?token=<access_token>
+// Body: { feedback: "What I want changed..." }
+// Saves the feedback on the most recent draft, flips customer status, emails Ken.
+// ---------------------------------------------------------------------------
+router.post('/request-revision', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const feedback = (req.body.feedback || '').trim();
+    if (!feedback) return res.status(400).json({ error: 'Please tell us what you would like changed.' });
+    if (feedback.length > 5000) return res.status(400).json({ error: 'Feedback is too long (5000 character max).' });
+
+    const customer = await db.queryOne(
+      'SELECT id, name, email FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const draft = await db.queryOne(
+      `SELECT id, version FROM drafts WHERE customer_id = $1
+       ORDER BY version DESC, created_at DESC LIMIT 1`,
+      [customer.id]
+    );
+    if (!draft) return res.status(400).json({ error: 'No draft to request revision on yet.' });
+
+    await db.query(
+      `UPDATE drafts SET customer_feedback = $1, feedback_received_at = NOW(), status = 'revision_requested'
+       WHERE id = $2`,
+      [feedback, draft.id]
+    );
+    await db.query(`UPDATE customers SET status = 'revision_requested' WHERE id = $1`, [customer.id]);
+
+    // Email Ken
+    const subject = 'Revision request from ' + customer.name;
+    const adminLink = 'https://www.bcsmemorybox.com/admin.html';
+    const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">Revision request</h2>' +
+'<p><strong>' + escapeHtml(customer.name) + '</strong> (' + escapeHtml(customer.email) + ') has requested a revision on their draft v' + draft.version + '.</p>' +
+'<div style="background:#faf7f0;border-left:4px solid #8b5a2b;padding:16px 22px;margin:20px 0;white-space:pre-wrap;font-family:Georgia,serif;">' +
+escapeHtml(feedback) +
+'</div>' +
+'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'</div>';
+
+    await sendEmail('kbakerbcs1@bcsmemorybox.com', subject, html);
+
+    res.json({ ok: true, message: 'Your revision request has been sent. Ken will work on it soon.' });
+  } catch (err) {
+    console.error('[customer/request-revision] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function sendEmail(to, subject, html) {
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'BCS Memory Box <ops@bcsmemorybox.com>',
+      to: to,
+      reply_to: 'kbakerbcs1@bcsmemorybox.com',
+      subject: subject,
+      html: html,
+    }),
+  });
+  if (!resp.ok) throw new Error('Resend error: ' + await resp.text());
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 module.exports = router;

@@ -229,23 +229,46 @@ function renderProcessing(customer) {
 }
 
 function renderDraftReady(customer) {
+  var token = getToken();
+  var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   return renderStatusBar(customer.status) +
     '<div class="card">' +
       '<div class="eyebrow">Ready</div>' +
       '<h1>Your draft is ready.</h1>' +
-      '<p>Ken has reviewed your initial draft. Download it below, read through it, and let us know if you\'d like any changes.</p>' +
-      '<button class="btn btn-large" disabled>Download your draft (.docx)</button>' +
-      '<p style="text-align:center;color:#999;font-size:13px;margin-top:8px;">Download functionality coming next</p>' +
-    '</div>';
+      '<p>Read through it, and let us know if you would like any changes. Two rounds of revisions are included.</p>' +
+      '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
+    '</div>' +
+    revisionRequestCard();
+}
+
+function revisionRequestCard() {
+  return '<div class="card">' +
+    '<h2>Want a revision?</h2>' +
+    '<p>If something reads wrong, you can describe what you would like changed and we will produce an updated version.</p>' +
+    '<textarea id="revision-feedback" rows="6" placeholder="e.g. The story about my father should say he was born in 1932, not 1928. Also, can the chapter about my children mention all three by name?" style="width:100%;padding:12px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:12px;"></textarea>' +
+    '<button class="btn" id="revision-btn">Send revision request</button>' +
+    '<p id="revision-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+  '</div>';
 }
 
 function renderDelivered(customer) {
+  var token = getToken();
+  var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   return renderStatusBar(customer.status) +
     '<div class="card">' +
       '<div class="eyebrow">Complete</div>' +
       '<h1>Here is your memoir.</h1>' +
-      '<p>This is your final document. You can download it anytime. If you ever want to add photographs or order a hardcover book, let us know.</p>' +
-      '<button class="btn btn-large" disabled>Download your memoir (.docx)</button>' +
+      '<p>This is your final document. You can download it anytime from this page. If you would still like to add photographs or order a hardcover book later, just reach out to Ken.</p>' +
+      '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your memoir (.docx)</a></p>' +
+    '</div>';
+}
+
+function renderRevisionRequested(customer) {
+  return renderStatusBar('processing') +
+    '<div class="card">' +
+      '<div class="eyebrow">Revision requested</div>' +
+      '<h1>Thanks &mdash; Ken has your notes.</h1>' +
+      '<p>Your revision request has been received. Ken will work on an updated version and you will get an email when the new draft is ready, usually within a few days.</p>' +
     '</div>';
 }
 
@@ -289,14 +312,16 @@ function renderError(msg) {
     else if (status === 'processing')  html = renderProcessing(data.customer);
     else if (status === 'draft_ready') html = renderDraftReady(data.customer);
     else if (status === 'delivered')   html = renderDelivered(data.customer);
-    else if (status === 'error')       html = renderErrorState(data.customer);
+    else if (status === 'error')              html = renderErrorState(data.customer);
+    else if (status === 'revision_requested') html = renderRevisionRequested(data.customer);
     else html = renderError('Unknown status: ' + status);
 
     document.getElementById('main').innerHTML = html;
 
-    // After render, wire the upload UI and the I'm done button.
+    // After render, wire the upload UI, the I'm done button, and the revision form.
     bindUploadHandler();
     bindDoneHandler(data.customer.status);
+    bindRevisionHandler();
   } catch (e) {
     console.error('yourstory load error:', e);
     document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
@@ -419,6 +444,44 @@ function bindUploadHandler() {
       btn.disabled = false;
       btn.textContent = 'Choose audio file';
       fileInput.value = ''; // allow retry
+    }
+  });
+}
+
+function bindRevisionHandler() {
+  var btn = document.getElementById('revision-btn');
+  var fb = document.getElementById('revision-feedback');
+  var statusEl = document.getElementById('revision-status');
+  if (!btn || !fb) return;
+
+  btn.addEventListener('click', async function() {
+    var feedback = (fb.value || '').trim();
+    if (!feedback) {
+      statusEl.textContent = 'Please describe what you would like changed.';
+      statusEl.style.color = '#c0392b';
+      return;
+    }
+    var token = getToken();
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    statusEl.textContent = '';
+
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/request-revision?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback: feedback }),
+      });
+      var data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Could not send revision request.');
+      statusEl.textContent = 'Sent! ' + (data.message || 'Ken will be in touch.');
+      statusEl.style.color = '#2a5a2a';
+      setTimeout(function(){ window.location.reload(); }, 1500);
+    } catch (err) {
+      statusEl.textContent = err.message || 'Something went wrong.';
+      statusEl.style.color = '#c0392b';
+      btn.disabled = false;
+      btn.textContent = 'Send revision request';
     }
   });
 }

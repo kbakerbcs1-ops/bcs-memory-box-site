@@ -169,4 +169,135 @@ router.get('/recording/:id/download', requireAdmin, async (req, res) => {
   }
 });
 
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/draft/:id
+// Returns the draft including its markdown content (for Ken to read/edit)
+// ---------------------------------------------------------------------------
+router.get('/draft/:id', requireAdmin, async (req, res) => {
+  try {
+    const draft = await db.queryOne(
+      `SELECT d.*, c.name AS customer_name, c.email AS customer_email, c.status AS customer_status
+       FROM drafts d
+       JOIN customers c ON c.id = d.customer_id
+       WHERE d.id = $1`,
+      [req.params.id]
+    );
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    res.json({ ok: true, draft });
+  } catch (err) {
+    console.error('[admin/draft/get] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/admin/draft/:id
+// Body: { markdown_content: "..." }
+// Save Ken's edits to the draft markdown (doesn't re-render docx — that happens on approve)
+// ---------------------------------------------------------------------------
+router.put('/draft/:id', requireAdmin, async (req, res) => {
+  try {
+    const newContent = req.body.markdown_content;
+    if (typeof newContent !== 'string') return res.status(400).json({ error: 'markdown_content required' });
+    const updated = await db.queryOne(
+      `UPDATE drafts SET markdown_content = $1 WHERE id = $2 RETURNING id`,
+      [newContent, req.params.id]
+    );
+    if (!updated) return res.status(404).json({ error: 'Draft not found' });
+    res.json({ ok: true, savedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('[admin/draft/put] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/draft/:id/approve
+// Regenerates the .docx from current markdown, marks draft approved, sets
+// customer status to delivered, emails the customer with a download link.
+// ---------------------------------------------------------------------------
+const { renderMemoirDocx } = require('../lib/cleanup');
+
+router.post('/draft/:id/approve', requireAdmin, async (req, res) => {
+  try {
+    const draft = await db.queryOne(
+      `SELECT d.*, c.name AS customer_name, c.email AS customer_email, c.access_token
+       FROM drafts d
+       JOIN customers c ON c.id = d.customer_id
+       WHERE d.id = $1`,
+      [req.params.id]
+    );
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    if (!draft.markdown_content) return res.status(400).json({ error: 'Draft has no content yet' });
+
+    // 1. Re-render .docx from possibly-edited markdown
+    const buffer = await renderMemoirDocx(draft.markdown_content);
+    const newKey = 'customers/' + draft.customer_id + '/drafts/approved-v' + draft.version + '-' + Date.now() + '.docx';
+    await storage.uploadObject(
+      newKey, buffer,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    );
+
+    // 2. Mark draft approved + delivered (single step for V1)
+    await db.query(
+      `UPDATE drafts
+       SET status = 'delivered',
+           docx_storage_key = $1,
+           approved_at = NOW(),
+           delivered_at = NOW()
+       WHERE id = $2`,
+      [newKey, draft.id]
+    );
+
+    // 3. Bump customer status to delivered
+    await db.query(`UPDATE customers SET status = 'delivered' WHERE id = $1`, [draft.customer_id]);
+
+    // 4. Email the customer with a download link (link points to their portal page)
+    const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(draft.access_token);
+    const subject = 'Your Memory Box memoir is ready';
+    const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.65;color:#2a2520;background:#fff;padding:32px;border-radius:8px;">' +
+'<p>Hi ' + escapeHtml(draft.customer_name) + ',</p>' +
+'<p>Your memoir is ready. I have read through what the system put together from your recordings and made any small touches I wanted to add.</p>' +
+'<p style="margin-top:28px;">' +
+'<a href="' + portalUrl + '" style="background:#8b5a2b;color:#fff;padding:14px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Georgia,serif;font-weight:bold;">Open your memoir</a>' +
+'</p>' +
+'<p>From your story page you can download the Word document and keep it for your family.</p>' +
+'<p>If anything reads wrong or you want me to change something, click <strong>Request a revision</strong> from the same page. Your purchase includes two rounds of revisions.</p>' +
+'<p style="margin-top:28px;">— Ken Baker<br>BCS Memory Box</p>' +
+'</div>';
+    await sendEmail(draft.customer_email, subject, html);
+
+    res.json({ ok: true, delivered: true });
+  } catch (err) {
+    console.error('[admin/draft/approve] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function sendEmail(to, subject, html) {
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'BCS Memory Box <ops@bcsmemorybox.com>',
+      to: to,
+      reply_to: 'kbakerbcs1@bcsmemorybox.com',
+      subject: subject,
+      html: html,
+    }),
+  });
+  if (!resp.ok) throw new Error('Resend error: ' + await resp.text());
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 module.exports = router;

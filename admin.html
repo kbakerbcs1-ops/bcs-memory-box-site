@@ -43,6 +43,9 @@
   .status-processing{background:#f5e8ff;color:#6b2c8d;}
   .status-draft_ready{background:#eaf5ea;color:#2a5a2a;}
   .status-delivered{background:#e0e0e0;color:#555;}
+  .status-error{background:#fcecea;color:#c0392b;}
+  .status-revision_requested{background:#fef6e7;color:#7c4a03;}
+  .status-ready_for_review{background:#eaf5ea;color:#2a5a2a;}
   .muted{color:#888;font-size:13px;}
 
   /* Customer detail */
@@ -258,7 +261,7 @@ async function showCustomer(id) {
     } else {
       html += '<div class="recording-list">';
       data.drafts.forEach(function(d){
-        html += '<div class="recording-item">' +
+        html += '<div class="recording-item" style="cursor:pointer;" data-draft-id="' + d.id + '">' +
           '<div class="info">' +
             '<strong>Version ' + d.version + '</strong> ' +
             '<span class="status-pill status-' + escapeHtml(d.status) + '">' + escapeHtml(d.status.replace(/_/g,' ')) + '</span><br>' +
@@ -268,6 +271,7 @@ async function showCustomer(id) {
               (d.delivered_at ? ' · delivered ' + fmtDate(d.delivered_at) : '') +
             '</span>' +
           '</div>' +
+          '<div class="actions"><span class="btn">Open</span></div>' +
         '</div>';
       });
       html += '</div>';
@@ -276,6 +280,84 @@ async function showCustomer(id) {
 
     document.getElementById('main').innerHTML = html;
     document.getElementById('back-link').addEventListener('click', showDashboard);
+    document.querySelectorAll('[data-draft-id]').forEach(function(el){
+      el.addEventListener('click', function(){ showDraft(el.getAttribute('data-draft-id'), id); });
+    });
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+// ============================================================================
+// Draft view — read full markdown, edit inline, approve & send
+// ============================================================================
+async function showDraft(draftId, customerId) {
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading draft…</p></div>';
+  try {
+    var data = await api('/api/admin/draft/' + encodeURIComponent(draftId));
+    var d = data.draft;
+    var html = '<a class="back-link" id="back-link">← Back to ' + escapeHtml(d.customer_name) + '</a>';
+    html += '<div class="detail-card">';
+    html += '<h2>Draft v' + d.version + ' — ' + escapeHtml(d.customer_name) + ' <span class="status-pill status-' + escapeHtml(d.status) + '">' + escapeHtml(d.status.replace(/_/g,' ')) + '</span></h2>';
+    html += '<p class="muted">Created ' + fmtDate(d.created_at) + (d.approved_at ? ' · approved ' + fmtDate(d.approved_at) : '') + (d.delivered_at ? ' · delivered ' + fmtDate(d.delivered_at) : '') + '</p>';
+    if (d.customer_feedback) {
+      html += '<div class="alert" style="background:#fef6e7;border-left:4px solid #d97706;padding:14px 18px;color:#7c4a03;border-radius:4px;margin:14px 0;">';
+      html +=   '<strong>Customer revision request (' + fmtDate(d.feedback_received_at) + '):</strong><br>';
+      html +=   '<div style="white-space:pre-wrap;margin-top:6px;">' + escapeHtml(d.customer_feedback) + '</div>';
+      html += '</div>';
+    }
+    html += '<h3 style="margin-top:18px;margin-bottom:8px;font-size:15px;color:#5a4a3a;">Memoir markdown (edit freely):</h3>';
+    html += '<textarea id="draft-markdown" style="width:100%;min-height:480px;font-family:Georgia,serif;font-size:15px;padding:14px;border:1px solid #d4cab5;border-radius:4px;line-height:1.55;">' + escapeHtml(d.markdown_content || '') + '</textarea>';
+    html += '<div style="display:flex;gap:10px;margin-top:14px;">';
+    html += '<button class="btn" id="save-btn">Save edits</button>';
+    html += '<button class="btn" id="approve-btn" style="background:#2a5a2a;color:#fff;border-color:#2a5a2a;">Approve and send to customer</button>';
+    html += '<button class="btn" id="download-btn" onclick="window.open(\'' + API_BASE + '/api/admin/recording/' + d.id + '/download?session=\' + encodeURIComponent(getSession()), \'_blank\')" style="display:none;">Download .docx</button>';
+    html += '</div>';
+    html += '<p id="draft-status" class="muted" style="margin-top:10px;font-size:14px;"></p>';
+    html += '</div>';
+
+    document.getElementById('main').innerHTML = html;
+    document.getElementById('back-link').addEventListener('click', function(){ showCustomer(customerId); });
+
+    var ta = document.getElementById('draft-markdown');
+    var statusEl = document.getElementById('draft-status');
+
+    document.getElementById('save-btn').addEventListener('click', async function() {
+      statusEl.textContent = 'Saving…'; statusEl.style.color = '#5a4a3a';
+      try {
+        await api('/api/admin/draft/' + encodeURIComponent(draftId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown_content: ta.value }),
+        });
+        statusEl.textContent = 'Saved.'; statusEl.style.color = '#2a5a2a';
+      } catch (e) {
+        statusEl.textContent = 'Save failed: ' + e.message; statusEl.style.color = '#c0392b';
+      }
+    });
+
+    document.getElementById('approve-btn').addEventListener('click', async function() {
+      if (!confirm('Approve this draft and email the customer with the download link?')) return;
+      statusEl.textContent = 'Saving edits and approving…'; statusEl.style.color = '#5a4a3a';
+      try {
+        // Save first, then approve (so the approve uses the edited markdown)
+        await api('/api/admin/draft/' + encodeURIComponent(draftId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown_content: ta.value }),
+        });
+        await api('/api/admin/draft/' + encodeURIComponent(draftId) + '/approve', {
+          method: 'POST',
+        });
+        statusEl.textContent = 'Approved and emailed to customer!';
+        statusEl.style.color = '#2a5a2a';
+        setTimeout(function(){ showCustomer(customerId); }, 1500);
+      } catch (e) {
+        statusEl.textContent = 'Approve failed: ' + e.message; statusEl.style.color = '#c0392b';
+      }
+    });
   } catch (e) {
     if (e.message !== 'Unauthorized') {
       document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
