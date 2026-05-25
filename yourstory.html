@@ -205,22 +205,26 @@ function renderRecordingPage(data) {
   '</div>';
   html += '</div>';
 
-  // Done button — only meaningful if there's at least one recording. Stubbed for now.
+  // Done button — fires the cleanup pipeline asynchronously.
   if (recordings.length > 0) {
-    html += '<button class="btn btn-large" disabled>I\'m done — turn my recordings into a memoir</button>';
-    html += '<p style="text-align:center;color:#999;font-size:13px;margin-top:8px;">Available once auto-cleanup pipeline is built</p>';
+    html += '<button class="btn btn-large" id="done-btn">I\'m done — turn my recordings into a memoir</button>';
+    html += '<p id="done-status" style="text-align:center;color:#999;font-size:13px;margin-top:8px;">' +
+            'Click when you\'ve recorded everything you want. Processing usually takes 15-30 minutes.' +
+            '</p>';
   }
 
   return html;
 }
 
 function renderProcessing(customer) {
+  // Trigger polling once the view has rendered (deferred to next tick)
+  setTimeout(startProcessingPoll, 100);
   return renderStatusBar(customer.status) +
     '<div class="card">' +
       '<div class="eyebrow">In progress</div>' +
       '<h1>Your memoir is being prepared.</h1>' +
       '<p>Thank you, ' + escapeHtml(customer.name) + '. Your recordings are being transcribed and polished into your memoir document. You\'ll get an email when it\'s ready for your review.</p>' +
-      '<div class="loading"><div class="spinner"></div><p>Usually takes a few hours.</p></div>' +
+      '<div class="loading"><div class="spinner"></div><p>Usually takes 15-30 minutes. This page will update automatically.</p></div>' +
     '</div>';
 }
 
@@ -285,17 +289,84 @@ function renderError(msg) {
     else if (status === 'processing')  html = renderProcessing(data.customer);
     else if (status === 'draft_ready') html = renderDraftReady(data.customer);
     else if (status === 'delivered')   html = renderDelivered(data.customer);
+    else if (status === 'error')       html = renderErrorState(data.customer);
     else html = renderError('Unknown status: ' + status);
 
     document.getElementById('main').innerHTML = html;
 
-    // After render, wire the upload UI (only present on status=recording view).
+    // After render, wire the upload UI and the I'm done button.
     bindUploadHandler();
+    bindDoneHandler(data.customer.status);
   } catch (e) {
     console.error('yourstory load error:', e);
     document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
   }
 })();
+
+// Render the 'error' state for the customer portal.
+function renderErrorState(customer) {
+  return renderStatusBar(customer.status) +
+    '<div class="card">' +
+      '<div class="eyebrow">Something went wrong</div>' +
+      '<h1>We hit a snag preparing your memoir.</h1>' +
+      '<p>Ken has been notified and will look into it. In most cases this is a quick fix and you can retry from here.</p>' +
+      '<button class="btn btn-large" id="retry-btn">Retry processing</button>' +
+      '<p id="retry-status" class="muted" style="text-align:center;font-size:13px;margin-top:8px;"></p>' +
+    '</div>';
+}
+
+// Wire the I'm done button (and the retry button when in error state).
+function bindDoneHandler(currentStatus) {
+  var doneBtn = document.getElementById('done-btn') || document.getElementById('retry-btn');
+  var statusEl = document.getElementById('done-status') || document.getElementById('retry-status');
+  if (!doneBtn) return;
+
+  doneBtn.addEventListener('click', async function() {
+    var token = getToken();
+    if (!token) return;
+    doneBtn.disabled = true;
+    doneBtn.textContent = 'Starting…';
+    if (statusEl) statusEl.textContent = 'Kicking off the cleanup pipeline…';
+
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/finish-recording?token=' + encodeURIComponent(token), {
+        method: 'POST',
+      });
+      var data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Could not start processing.');
+      if (statusEl) {
+        statusEl.textContent = 'Processing started! This page will update automatically.';
+        statusEl.style.color = '#2a5a2a';
+      }
+      setTimeout(function(){ window.location.reload(); }, 1500);
+    } catch (err) {
+      console.error('Finish error:', err);
+      if (statusEl) {
+        statusEl.textContent = 'Failed to start processing: ' + (err.message || 'unknown');
+        statusEl.style.color = '#c0392b';
+      }
+      doneBtn.disabled = false;
+      doneBtn.textContent = currentStatus === 'error' ? 'Retry processing' : "I'm done — turn my recordings into a memoir";
+    }
+  });
+}
+
+// On the 'processing' view, poll the API every 15 seconds so the customer
+// sees the page update when the draft is ready.
+function startProcessingPoll() {
+  var token = getToken();
+  if (!token) return;
+  var poller = setInterval(async function() {
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/me?token=' + encodeURIComponent(token));
+      var data = await resp.json();
+      if (data && data.customer && data.customer.status !== 'processing') {
+        clearInterval(poller);
+        window.location.reload();
+      }
+    } catch (e) { /* swallow; will retry */ }
+  }, 15000);
+}
 
 // Wire the file picker + upload POST.
 function bindUploadHandler() {
