@@ -128,25 +128,30 @@
         throw new Error(data.error || 'Sign-up failed.');
       }
 
-      // TODO: once Stripe is wired up, redirect to the Stripe Checkout URL.
-      // For now, show a friendly placeholder so we can verify the flow works.
+      // If they already paid, skip checkout and send them to their portal.
       if (data.alreadyPaid) {
         showSuccess(
           '<strong>Welcome back, ' + escapeHtml(name) + '!</strong><br><br>' +
-          'You already have an account. ' +
-          '<a href="/yourstory.html?token=' + encodeURIComponent(data.accessToken) + '">Open your story →</a>'
+          'You already have an account. Taking you to your story…'
         );
-      } else {
-        showSuccess(
-          '<strong>Account created.</strong><br><br>' +
-          'Stripe checkout is being set up — once it is live, this page will redirect you to a secure payment screen automatically. ' +
-          'For now, your account is saved and Ken has been notified.<br><br>' +
-          '<small>Your access token (save this): <code style="background:#fff;padding:2px 6px;border-radius:3px;font-size:13px;">' +
-          escapeHtml(data.accessToken) +
-          '</code></small>'
-        );
+        setTimeout(function() {
+          window.location.href = '/yourstory.html?token=' + encodeURIComponent(data.accessToken);
+        }, 800);
+        return;
       }
-      btn.style.display = 'none';
+
+      // Otherwise, create a Stripe Checkout Session and redirect to it.
+      btn.textContent = 'Taking you to secure checkout…';
+      var coResp = await fetch(API_BASE + '/api/customer/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: data.accessToken }),
+      });
+      var coData = await coResp.json();
+      if (!coResp.ok || !coData.ok || !coData.checkoutUrl) {
+        throw new Error(coData.error || 'Could not start checkout. Please try again.');
+      }
+      window.location.href = coData.checkoutUrl;
     } catch (err) {
       console.error('Signup error:', err);
       showError(err.message || 'Something went wrong. Please try again, or email Ken directly at kbakerbcs1@bcsmemorybox.com.');

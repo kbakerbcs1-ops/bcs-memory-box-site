@@ -2,6 +2,7 @@
 // Originally: free-trial endpoint only.
 // V2 (May 2026): customer portal — signup, recording uploads, automated
 // memoir cleanup, customer/admin dashboards.
+// V3 (May 26 2026): Stripe checkout + webhook live. Dev mark-paid removed.
 
 const express = require('express');
 const multer = require('multer');
@@ -10,9 +11,9 @@ const path = require('path');
 const db = require('./lib/db');
 const customerRoutes = require('./routes/customer');
 const uploadRoutes   = require('./routes/upload');
-const devRoutes      = require('./routes/dev');
 const adminRoutes    = require('./routes/admin');
 const finishRoutes   = require('./routes/finish');
+const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 
 const app = express();
 const upload = multer({
@@ -37,10 +38,17 @@ app.use((req, res, next) => {
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-session');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-session, stripe-signature');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
+
+// ============================================================================
+// Stripe webhook — MUST be mounted before any global JSON body parser,
+// because Stripe signature verification requires the raw request body.
+// The webhookRouter applies express.raw() internally for its single route.
+// ============================================================================
+app.use('/api/stripe/webhook', webhookRouter);
 
 // ============================================================================
 // Health checks
@@ -48,8 +56,9 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => res.json({
   status: 'ok',
   service: 'bcs-memory-box-portal',
-  version: '0.2.0',
+  version: '0.5.0',
   db: db.enabled,
+  stripe: !!process.env.STRIPE_SECRET_KEY,
 }));
 app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 
@@ -57,10 +66,8 @@ app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 // Customer portal API
 // ============================================================================
 app.use('/api/customer', customerRoutes);
+app.use('/api/customer', checkoutRouter);          // POST /api/customer/create-checkout-session
 app.use('/api/customer/upload', uploadRoutes);
-
-// DEV ONLY — remove before public launch
-app.use('/api/dev', devRoutes);
 
 // Admin (Ken's dashboard)
 app.use('/api/admin', adminRoutes);
@@ -229,5 +236,6 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   app.listen(PORT, () => {
     console.log('BCS Memory Box portal server listening on port ' + PORT);
     console.log('  db: ' + (db.enabled ? 'connected' : 'NOT CONFIGURED (DATABASE_URL missing)'));
+    console.log('  stripe: ' + (process.env.STRIPE_SECRET_KEY ? 'configured' : 'NOT CONFIGURED'));
   });
 })();

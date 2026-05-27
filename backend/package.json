@@ -1,7 +1,7 @@
 {
   "name": "bcs-memory-box-portal",
-  "version": "0.4.0",
-  "description": "Backend service for the BCS Memory Box portal. Handles free trial, customer signups, recording uploads, automated memoir cleanup, admin dashboard.",
+  "version": "0.5.0",
+  "description": "Backend service for the BCS Memory Box portal. Handles free trial, customer signups, recording uploads, automated memoir cleanup, admin dashboard, Stripe checkout + webhook.",
   "private": true,
   "main": "server.js",
   "engines": {
@@ -15,6 +15,7 @@
     "multer": "^1.4.5-lts.1",
     "pg": "^8.13.1",
     "@aws-sdk/client-s3": "^3.706.0",
-    "docx": "^9.5.0"
+    "docx": "^9.5.0",
+    "stripe": "^17.5.0"
   }
 }
