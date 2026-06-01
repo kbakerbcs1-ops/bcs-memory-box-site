@@ -195,12 +195,21 @@ function renderRecordingPage(data) {
 
   // Upload zone — real, wired to /api/customer/upload
   html += '<div class="card">';
-  html += '<h2>Upload a recording</h2>';
+  html += '<h2>Add a recording</h2>';
   html += '<div class="upload-zone">' +
-    '<p style="font-size:18px;color:#5a4a3a;">Use the voice memo app on your phone. AirDrop or email the file to this computer, then upload it here.</p>' +
-    '<p class="muted" style="font-size:14px;margin-top:8px;">Audio formats accepted: .m4a, .mp3, .wav, .aac, .webm. Up to 100 MB.</p>' +
+    '<p style="font-size:18px;color:#5a4a3a;">Press the button, tell your story, and press it again when you\'re done. We\'ll take care of the rest.</p>' +
+    '<button class="btn btn-large" id="record-btn" style="margin:12px auto 0;">● Start recording</button>' +
+    '<p id="record-timer" style="font-size:22px;color:#8b5a2b;margin-top:14px;font-weight:bold;display:none;">0:00</p>' +
+    '<audio id="record-preview" controls style="display:none;margin:14px auto 0;width:100%;max-width:380px;"></audio>' +
+    '<div id="record-actions" style="display:none;margin-top:14px;">' +
+      '<button class="btn" id="record-save">Save this recording</button>' +
+      '<button class="btn btn-secondary" id="record-redo" style="margin-left:8px;">Re-record</button>' +
+    '</div>' +
+    '<p id="record-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
+    '<hr style="border:none;border-top:1px solid #e8dfc9;margin:26px 0 18px;">' +
+    '<p class="muted" style="font-size:14px;">Already have an audio file? You can upload it instead. Accepted: .m4a, .mp3, .wav, .aac, .webm, up to 100 MB.</p>' +
     '<input type="file" id="audio-file" accept="audio/*,.m4a,.mp3,.wav,.aac,.webm" style="display:none;" />' +
-    '<button class="btn" id="upload-btn" style="margin-top:12px;">Choose audio file</button>' +
+    '<button class="btn btn-secondary" id="upload-btn" style="margin-top:10px;">Choose audio file</button>' +
     '<p id="upload-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
   '</div>';
   html += '</div>';
@@ -318,8 +327,9 @@ function renderError(msg) {
 
     document.getElementById('main').innerHTML = html;
 
-    // After render, wire the upload UI, the I'm done button, and the revision form.
+    // After render, wire the upload UI, the in-browser recorder, the I'm done button, and the revision form.
     bindUploadHandler();
+    bindRecordHandler();
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
   } catch (e) {
@@ -444,6 +454,142 @@ function bindUploadHandler() {
       btn.disabled = false;
       btn.textContent = 'Choose audio file';
       fileInput.value = ''; // allow retry
+    }
+  });
+}
+
+// In-browser recorder. Captures mic audio with MediaRecorder, lets the
+// customer preview it, then posts the blob to the SAME /api/customer/upload
+// endpoint the file picker uses (FormData field 'audio'), so it flows into the
+// existing transcription + cleanup pipeline unchanged.
+function bindRecordHandler() {
+  var recBtn = document.getElementById('record-btn');
+  if (!recBtn) return; // not on the recording view
+
+  var timerEl   = document.getElementById('record-timer');
+  var previewEl = document.getElementById('record-preview');
+  var actionsEl = document.getElementById('record-actions');
+  var saveBtn   = document.getElementById('record-save');
+  var redoBtn   = document.getElementById('record-redo');
+  var statusEl  = document.getElementById('record-status');
+
+  var mediaRecorder = null;
+  var chunks = [];
+  var audioBlob = null;
+  var stream = null;
+  var timerInterval = null;
+  var seconds = 0;
+
+  function fmtTime(s) {
+    var m = Math.floor(s / 60), sec = s % 60;
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+
+  function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  }
+
+  function resetToStart() {
+    stopTimer();
+    seconds = 0;
+    chunks = [];
+    audioBlob = null;
+    recBtn.style.display = '';
+    recBtn.disabled = false;
+    recBtn.textContent = '● Start recording';
+    recBtn.classList.remove('btn-secondary');
+    timerEl.style.display = 'none';
+    timerEl.textContent = '0:00';
+    previewEl.style.display = 'none';
+    previewEl.removeAttribute('src');
+    actionsEl.style.display = 'none';
+    saveBtn.disabled = false;
+    redoBtn.disabled = false;
+    saveBtn.textContent = 'Save this recording';
+  }
+
+  recBtn.addEventListener('click', async function() {
+    // START
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        statusEl.textContent = 'Couldn\'t access your microphone. Please allow microphone permission in your browser, then try again.';
+        statusEl.style.color = '#c0392b';
+        return;
+      }
+      chunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
+      mediaRecorder.onstop = function() {
+        audioBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+        previewEl.src = URL.createObjectURL(audioBlob);
+        previewEl.style.display = 'block';
+        actionsEl.style.display = 'block';
+        recBtn.style.display = 'none';
+        if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+      };
+      mediaRecorder.start();
+      statusEl.textContent = '';
+      seconds = 0;
+      timerEl.style.display = 'block';
+      timerEl.textContent = '0:00';
+      timerInterval = setInterval(function() {
+        seconds++;
+        timerEl.textContent = fmtTime(seconds);
+      }, 1000);
+      recBtn.textContent = '■ Stop recording';
+      recBtn.classList.add('btn-secondary');
+    // STOP
+    } else if (mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+      stopTimer();
+    }
+  });
+
+  redoBtn.addEventListener('click', function() {
+    statusEl.textContent = '';
+    statusEl.style.color = '#5a4a3a';
+    resetToStart();
+  });
+
+  saveBtn.addEventListener('click', async function() {
+    if (!audioBlob) return;
+    var token = getToken();
+    if (!token) {
+      statusEl.textContent = 'No access token in URL — please use your welcome email link.';
+      statusEl.style.color = '#c0392b';
+      return;
+    }
+    saveBtn.disabled = true;
+    redoBtn.disabled = true;
+    saveBtn.textContent = 'Saving… (' + formatSize(audioBlob.size) + ')';
+    statusEl.textContent = 'Sending to secure storage…';
+    statusEl.style.color = '#5a4a3a';
+
+    var mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+    var ext = mime.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
+    var fname = 'recording-' + Date.now() + '.' + ext;
+    var fd = new FormData();
+    fd.append('audio', audioBlob, fname);
+
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        body: fd,
+      });
+      var data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || ('Save failed (status ' + resp.status + ')'));
+      statusEl.textContent = 'Saved! Refreshing your recordings…';
+      statusEl.style.color = '#2a5a2a';
+      setTimeout(function(){ window.location.reload(); }, 1200);
+    } catch (err) {
+      console.error('Record save error:', err);
+      statusEl.textContent = 'Save failed: ' + (err.message || 'Unknown error');
+      statusEl.style.color = '#c0392b';
+      saveBtn.disabled = false;
+      redoBtn.disabled = false;
+      saveBtn.textContent = 'Save this recording';
     }
   });
 }
