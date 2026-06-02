@@ -146,6 +146,57 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// DELETE /api/admin/customer/:id
+// Permanently removes a customer along with all of their recordings and drafts.
+// The recordings/drafts rows are removed automatically by the database's
+// ON DELETE CASCADE foreign keys; we additionally make a best-effort attempt
+// to delete their stored files (audio + rendered .docx) from R2 so nothing is
+// left orphaned. Intended for clearing out test accounts before launch.
+// ---------------------------------------------------------------------------
+router.delete('/customer/:id', requireAdmin, async (req, res) => {
+  try {
+    const customer = await db.queryOne(
+      'SELECT id, email, name FROM customers WHERE id = $1',
+      [req.params.id]
+    );
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    // Collect storage keys BEFORE the rows are deleted so we can tidy up R2.
+    const { rows: recs } = await db.query(
+      'SELECT storage_key FROM recordings WHERE customer_id = $1',
+      [req.params.id]
+    );
+    const { rows: drfts } = await db.query(
+      'SELECT docx_storage_key FROM drafts WHERE customer_id = $1',
+      [req.params.id]
+    );
+    const keys = recs.map(r => r.storage_key)
+      .concat(drfts.map(d => d.docx_storage_key))
+      .filter(Boolean);
+
+    // Delete the customer; recordings + drafts go with it via ON DELETE CASCADE.
+    await db.query('DELETE FROM customers WHERE id = $1', [req.params.id]);
+
+    // Best-effort file cleanup — never fail the request just because R2 hiccups.
+    let filesDeleted = 0;
+    for (const key of keys) {
+      try {
+        await storage.deleteObject(key);
+        filesDeleted++;
+      } catch (e) {
+        console.warn('[admin/customer/delete] could not delete ' + key + ': ' + e.message);
+      }
+    }
+
+    console.log('[admin/customer/delete] removed ' + customer.email + ' (' + customer.id + '), ' + filesDeleted + ' file(s) cleaned up');
+    res.json({ ok: true, deleted: true, email: customer.email, filesDeleted });
+  } catch (err) {
+    console.error('[admin/customer/delete] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/admin/recording/:id/url
 // Returns a temporary download URL for a recording (so Ken can listen to it)
 // V1: just stream it through the server. Later we can presign R2 URLs.
