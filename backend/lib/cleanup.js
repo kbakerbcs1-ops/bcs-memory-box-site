@@ -333,7 +333,7 @@ async function emailAdminDraftReady(customer, draftId) {
 '<p style="color:#888;font-size:13px;">Draft ID: ' + draftId + '</p>' +
 '</div>';
 
-  return sendEmail('kbakerbcs1@bcsmemorybox.com', subject, html);
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
 }
 
 async function emailAdminError(customer, errorMessage) {
@@ -345,7 +345,7 @@ async function emailAdminError(customer, errorMessage) {
 '<p><strong>Error:</strong> ' + escapeHtml(errorMessage) + '</p>' +
 '<p>Their customer status is now set to <code>error</code>. You can investigate in the admin dashboard, fix the issue, and retry from there.</p>' +
 '</div>';
-  return sendEmail('kbakerbcs1@bcsmemorybox.com', subject, html);
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
 }
 
 async function sendEmail(to, subject, html) {
