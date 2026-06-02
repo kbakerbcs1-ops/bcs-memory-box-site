@@ -220,7 +220,7 @@ escapeHtml(feedback) +
 '<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
 '</div>';
 
-    await sendEmail('kbakerbcs1@bcsmemorybox.com', subject, html);
+    await sendEmail('kbakerbcs1@gmail.com', subject, html);
 
     res.json({ ok: true, message: 'Your revision request has been sent. Ken will work on it soon.' });
   } catch (err) {
