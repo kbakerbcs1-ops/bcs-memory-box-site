@@ -54,6 +54,13 @@
   .btn-secondary:hover{background:#d6c9a8;}
   .btn-large{padding:18px 36px;font-size:18px;display:block;margin:24px auto 0;}
 
+  .photo-grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:24px;justify-content:center;}
+  .photo-tile{width:160px;}
+  .photo-tile img{width:160px;height:160px;object-fit:cover;border-radius:6px;border:1px solid #e8dfc9;background:#faf7f0;display:block;}
+  .photo-fallback{width:160px;height:160px;border-radius:6px;border:1px solid #e8dfc9;background:#faf7f0;display:none;align-items:center;justify-content:center;text-align:center;color:#2a5a2a;font-size:14px;padding:10px;}
+  .photo-caption{margin-top:6px;font-size:14px;color:#5a4a3a;text-align:center;}
+  .photo-remove{background:none;border:none;color:#c0392b;font-family:Georgia,serif;font-size:13px;cursor:pointer;padding:2px 0;text-decoration:underline;display:block;margin:2px auto 0;}
+
   .alert{padding:16px 20px;border-radius:6px;margin-bottom:16px;font-size:15px;}
   .alert-warning{background:#fef6e7;border-left:4px solid #d97706;color:#7c4a03;}
   .alert-error{background:#fcecea;border-left:4px solid #c0392b;color:#c0392b;}
@@ -152,6 +159,7 @@ function renderAwaitingPayment(customer) {
 function renderRecordingPage(data) {
   var c = data.customer;
   var recordings = data.recordings || [];
+  var photos = data.photos || [];
   var html = renderStatusBar(c.status);
   html += '<div class="card">';
   html += '<div class="eyebrow">Welcome back</div>';
@@ -211,6 +219,33 @@ function renderRecordingPage(data) {
     '<input type="file" id="audio-file" accept="audio/*,.m4a,.mp3,.wav,.aac,.webm" style="display:none;" />' +
     '<button class="btn btn-secondary" id="upload-btn" style="margin-top:10px;">Choose audio file</button>' +
     '<p id="upload-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
+  '</div>';
+  html += '</div>';
+
+  // Photographs — optional, gathered alongside recordings. Ken places them in
+  // the memoir when he polishes the draft, so the customer just adds them here.
+  html += '<div class="card">';
+  html += '<h2>Add photographs <span style="font-weight:normal;color:#888;font-size:17px;">(optional)</span></h2>';
+  html += '<p>Have a favorite picture for your story? Add it here. On your phone, the button opens your camera — just hold up an old photograph and take a picture of it — or choose one you already have. There\'s nothing to figure out; Ken places the photos into your memoir for you.</p>';
+  if (photos.length > 0) {
+    html += '<div class="photo-grid">';
+    photos.forEach(function(p) {
+      var src = API_BASE + '/api/customer/photo/' + p.id + '?token=' + encodeURIComponent(getToken());
+      html += '<div class="photo-tile">' +
+        '<img src="' + src + '" alt="' + escapeHtml(p.caption || 'photo') + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" />' +
+        '<div class="photo-fallback">Photo added ✓</div>' +
+        (p.caption ? '<div class="photo-caption">' + escapeHtml(p.caption) + '</div>' : '') +
+        '<button class="photo-remove" data-photo-id="' + p.id + '">Remove</button>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="upload-zone">' +
+    '<p style="font-size:17px;color:#5a4a3a;">Add a photograph to go with your story.</p>' +
+    '<input type="text" id="photo-caption" placeholder="Who or what is this? (optional)" style="width:100%;max-width:460px;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:6px;" />' +
+    '<input type="file" id="photo-file" accept="image/*" style="display:none;" />' +
+    '<button class="btn btn-large" id="photo-btn" style="margin:14px auto 0;">📷 Add a photo</button>' +
+    '<p id="photo-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
   '</div>';
   html += '</div>';
 
@@ -327,9 +362,11 @@ function renderError(msg) {
 
     document.getElementById('main').innerHTML = html;
 
-    // After render, wire the upload UI, the in-browser recorder, the I'm done button, and the revision form.
+    // After render, wire the upload UI, the in-browser recorder, the photo
+    // uploader, the I'm done button, and the revision form.
     bindUploadHandler();
     bindRecordHandler();
+    bindPhotoHandler();
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
   } catch (e) {
@@ -591,6 +628,83 @@ function bindRecordHandler() {
       redoBtn.disabled = false;
       saveBtn.textContent = 'Save this recording';
     }
+  });
+}
+
+// Wire the photo picker + upload POST. Mirrors the audio uploader, posting to
+// /api/customer/upload-photo with FormData fields 'photo' and optional 'caption'.
+function bindPhotoHandler() {
+  var btn = document.getElementById('photo-btn');
+  var fileInput = document.getElementById('photo-file');
+  var captionInput = document.getElementById('photo-caption');
+  var statusEl = document.getElementById('photo-status');
+  if (!btn || !fileInput) return; // not on the recording view
+
+  btn.addEventListener('click', function() {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async function() {
+    var file = fileInput.files[0];
+    if (!file) return;
+
+    var token = getToken();
+    if (!token) {
+      statusEl.textContent = 'No access token in URL — please use your welcome email link.';
+      statusEl.style.color = '#c0392b';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Adding… (' + formatSize(file.size) + ')';
+    statusEl.textContent = 'Sending your photo to secure storage…';
+    statusEl.style.color = '#5a4a3a';
+
+    var fd = new FormData();
+    fd.append('photo', file, file.name);
+    fd.append('caption', (captionInput && captionInput.value) || '');
+
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/upload-photo?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        body: fd,
+      });
+      var data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || ('Upload failed (status ' + resp.status + ')'));
+      statusEl.textContent = 'Photo added! Refreshing…';
+      statusEl.style.color = '#2a5a2a';
+      setTimeout(function(){ window.location.reload(); }, 1000);
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      statusEl.textContent = 'Could not add photo: ' + (err.message || 'Unknown error');
+      statusEl.style.color = '#c0392b';
+      btn.disabled = false;
+      btn.textContent = '📷 Add a photo';
+      fileInput.value = ''; // allow retry
+    }
+  });
+
+  // Remove buttons on existing photos
+  document.querySelectorAll('.photo-remove').forEach(function(rb) {
+    rb.addEventListener('click', async function() {
+      if (!confirm('Remove this photo?')) return;
+      var id = rb.getAttribute('data-photo-id');
+      var token = getToken();
+      rb.disabled = true;
+      rb.textContent = 'Removing…';
+      try {
+        var resp = await fetch(API_BASE + '/api/customer/photo/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(token), {
+          method: 'DELETE',
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.error || 'Remove failed');
+        window.location.reload();
+      } catch (err) {
+        rb.disabled = false;
+        rb.textContent = 'Remove';
+        alert('Could not remove the photo: ' + (err.message || 'error'));
+      }
+    });
   });
 }
 

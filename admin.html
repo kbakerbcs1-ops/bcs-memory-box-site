@@ -285,6 +285,30 @@ async function showCustomer(id) {
     }
     html += '</div>';
 
+    // Photos the customer added (Ken places these into the memoir when polishing)
+    html += '<div class="detail-card">';
+    html +=   '<h2>Photos (' + data.photos.length + ')</h2>';
+    if (data.photos.length === 0) {
+      html += '<div class="empty">No photos added yet.</div>';
+    } else {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;">';
+      data.photos.forEach(function(p){
+        var src = API_BASE + '/api/admin/photo/' + p.id + '/view?session=' + encodeURIComponent(getSession());
+        var fmt = escapeHtml(((p.content_type || '').replace('image/','') || 'file').toUpperCase());
+        html += '<div style="width:150px;">' +
+          '<a href="' + src + '" target="_blank" style="text-decoration:none;">' +
+            '<img src="' + src + '" alt="' + escapeHtml(p.caption || p.original_filename || 'photo') + '" ' +
+              'style="width:150px;height:150px;object-fit:cover;border-radius:6px;border:1px solid #e8dfc9;background:#faf7f0;display:block;" ' +
+              'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" />' +
+            '<div style="width:150px;height:150px;border-radius:6px;border:1px solid #e8dfc9;background:#faf7f0;display:none;align-items:center;justify-content:center;text-align:center;color:#8b5a2b;font-size:13px;padding:10px;">' + fmt + ' photo<br>(click to download)</div>' +
+          '</a>' +
+          '<div class="muted" style="margin-top:6px;font-size:13px;">' + (p.caption ? escapeHtml(p.caption) : '<span style="color:#bbb;">No caption</span>') + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
     // Danger zone — permanently delete this customer (used for clearing test accounts)
     html += '<div class="detail-card danger-card">';
     html +=   '<h2>Danger zone</h2>';
