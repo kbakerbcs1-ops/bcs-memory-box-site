@@ -11,6 +11,7 @@ const path = require('path');
 const db = require('./lib/db');
 const customerRoutes = require('./routes/customer');
 const uploadRoutes   = require('./routes/upload');
+const photoRoutes    = require('./routes/photo');
 const adminRoutes    = require('./routes/admin');
 const finishRoutes   = require('./routes/finish');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
@@ -68,6 +69,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 app.use('/api/customer', customerRoutes);
 app.use('/api/customer', checkoutRouter);          // POST /api/customer/create-checkout-session
 app.use('/api/customer/upload', uploadRoutes);
+app.use('/api/customer/upload-photo', photoRoutes);
 
 // Admin (Ken's dashboard)
 app.use('/api/admin', adminRoutes);
