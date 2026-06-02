@@ -77,7 +77,7 @@ router.post('/signup', async (req, res) => {
 
 // ----------------------------------------------------------------------------
 // GET /api/customer/me?token=<access_token>
-// Returns the customer's own data (status, recordings, drafts).
+// Returns the customer's own data (status, recordings, photos, drafts).
 // Used by the customer's personal portal page.
 // ----------------------------------------------------------------------------
 router.get('/me', async (req, res) => {
@@ -102,6 +102,14 @@ router.get('/me', async (req, res) => {
       [customer.id]
     );
 
+    const { rows: photos } = await db.query(
+      `SELECT id, original_filename, size_bytes, content_type, caption, created_at
+       FROM photos
+       WHERE customer_id = $1
+       ORDER BY created_at ASC`,
+      [customer.id]
+    );
+
     const { rows: drafts } = await db.query(
       `SELECT id, version, status, approved_at, delivered_at, created_at
        FROM drafts
@@ -121,6 +129,7 @@ router.get('/me', async (req, res) => {
         createdAt: customer.created_at,
       },
       recordings,
+      photos,
       drafts,
     });
   } catch (err) {
@@ -170,6 +179,65 @@ router.get('/download', async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[customer/download] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/customer/photo/:id?token=<access_token>
+// Streams a single photo inline so it can be shown in an <img> tag on the
+// customer's own story page. Scoped to the photo's owner via the access token.
+// ---------------------------------------------------------------------------
+router.get('/photo/:id', async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+
+    const photo = await db.queryOne(
+      `SELECT p.storage_key, p.content_type
+       FROM photos p
+       JOIN customers c ON c.id = p.customer_id
+       WHERE p.id = $1 AND c.access_token = $2`,
+      [req.params.id, token]
+    );
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    const { stream, contentType, contentLength } = await storage.getObjectStream(photo.storage_key);
+    res.setHeader('Content-Type', photo.content_type || contentType || 'image/jpeg');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('[customer/photo] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/customer/photo/:id?token=<access_token>
+// Lets the customer remove a photo they added by mistake.
+// ---------------------------------------------------------------------------
+router.delete('/photo/:id', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+
+    const photo = await db.queryOne(
+      `SELECT p.id, p.storage_key
+       FROM photos p
+       JOIN customers c ON c.id = p.customer_id
+       WHERE p.id = $1 AND c.access_token = $2`,
+      [req.params.id, token]
+    );
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    await db.query('DELETE FROM photos WHERE id = $1', [photo.id]);
+    storage.deleteObject(photo.storage_key)
+      .catch(e => console.warn('[customer/photo delete] storage cleanup failed:', e.message));
+
+    res.json({ ok: true, deleted: true });
+  } catch (err) {
+    console.error('[customer/photo delete] error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -138,7 +138,15 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    res.json({ ok: true, customer, recordings, drafts });
+    const { rows: photos } = await db.query(
+      `SELECT id, original_filename, size_bytes, content_type, caption, created_at
+       FROM photos
+       WHERE customer_id = $1
+       ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+
+    res.json({ ok: true, customer, recordings, drafts, photos });
   } catch (err) {
     console.error('[admin/customer/:id] error:', err);
     res.status(500).json({ error: err.message });
@@ -170,8 +178,13 @@ router.delete('/customer/:id', requireAdmin, async (req, res) => {
       'SELECT docx_storage_key FROM drafts WHERE customer_id = $1',
       [req.params.id]
     );
+    const { rows: phts } = await db.query(
+      'SELECT storage_key FROM photos WHERE customer_id = $1',
+      [req.params.id]
+    );
     const keys = recs.map(r => r.storage_key)
       .concat(drfts.map(d => d.docx_storage_key))
+      .concat(phts.map(p => p.storage_key))
       .filter(Boolean);
 
     // Delete the customer; recordings + drafts go with it via ON DELETE CASCADE.
@@ -216,6 +229,29 @@ router.get('/recording/:id/download', requireAdmin, async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[admin/recording/download] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/photo/:id/view
+// Streams a customer photo inline so Ken can see it in the dashboard. The
+// admin session token is passed as ?session=... so it works in an <img> tag.
+// ---------------------------------------------------------------------------
+router.get('/photo/:id/view', requireAdmin, async (req, res) => {
+  try {
+    const photo = await db.queryOne(
+      'SELECT storage_key, content_type FROM photos WHERE id = $1',
+      [req.params.id]
+    );
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+    const { stream, contentType, contentLength } = await storage.getObjectStream(photo.storage_key);
+    res.setHeader('Content-Type', photo.content_type || contentType || 'image/jpeg');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('[admin/photo/view] error:', err);
     res.status(500).json({ error: err.message });
   }
 });
