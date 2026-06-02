@@ -65,6 +65,13 @@
   .recording-item .actions{display:flex;gap:8px;}
   .btn{display:inline-block;padding:8px 14px;font-size:13px;font-family:Georgia,serif;border:1px solid #8b5a2b;color:#8b5a2b;background:#fff;border-radius:4px;text-decoration:none;cursor:pointer;}
   .btn:hover{background:#8b5a2b;color:#fff;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+  /* Danger zone — destructive actions */
+  .danger-card{border:1px solid #f0d4d0;}
+  .danger-card h2{color:#c0392b;}
+  .btn-danger{border-color:#c0392b;color:#c0392b;}
+  .btn-danger:hover{background:#c0392b;color:#fff;}
 
   .empty{padding:24px;text-align:center;color:#888;font-style:italic;}
 
@@ -278,10 +285,35 @@ async function showCustomer(id) {
     }
     html += '</div>';
 
+    // Danger zone — permanently delete this customer (used for clearing test accounts)
+    html += '<div class="detail-card danger-card">';
+    html +=   '<h2>Danger zone</h2>';
+    html +=   '<p class="muted" style="margin-bottom:14px;">Permanently delete this customer along with all of their recordings and drafts. This cannot be undone — use it to clear out test accounts.</p>';
+    html +=   '<button class="btn btn-danger" id="delete-customer-btn">Delete this customer</button>';
+    html +=   '<span id="delete-status" class="muted" style="margin-left:12px;"></span>';
+    html += '</div>';
+
     document.getElementById('main').innerHTML = html;
     document.getElementById('back-link').addEventListener('click', showDashboard);
     document.querySelectorAll('[data-draft-id]').forEach(function(el){
       el.addEventListener('click', function(){ showDraft(el.getAttribute('data-draft-id'), id); });
+    });
+
+    document.getElementById('delete-customer-btn').addEventListener('click', async function() {
+      if (!confirm('Permanently delete ' + c.name + ' (' + c.email + ') and all of their recordings and drafts?\n\nThis cannot be undone.')) return;
+      var btn = document.getElementById('delete-customer-btn');
+      var st = document.getElementById('delete-status');
+      btn.disabled = true;
+      st.textContent = 'Deleting…'; st.style.color = '#5a4a3a';
+      try {
+        await api('/api/admin/customer/' + encodeURIComponent(id), { method: 'DELETE' });
+        showDashboard();
+      } catch (e) {
+        if (e.message !== 'Unauthorized') {
+          st.textContent = 'Delete failed: ' + e.message; st.style.color = '#c0392b';
+          btn.disabled = false;
+        }
+      }
     });
   } catch (e) {
     if (e.message !== 'Unauthorized') {
