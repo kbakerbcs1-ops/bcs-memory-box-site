@@ -350,6 +350,8 @@ router.post('/draft/:id/approve', requireAdmin, async (req, res) => {
 '<p style="margin-top:28px;">' +
 '<a href="' + portalUrl + '" style="background:#8b5a2b;color:#fff;padding:14px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Georgia,serif;font-weight:bold;">Open your memoir</a>' +
 '</p>' +
+'<p style="font-size:15px;color:#6b5d4f;margin-top:6px;">If the button above does not open, copy and paste this web address into your web browser:<br>' +
+'<a href="' + portalUrl + '" style="color:#8b5a2b;word-break:break-all;">' + portalUrl + '</a></p>' +
 '<p>From your story page you can download the Word document and keep it for your family.</p>' +
 '<p>If anything reads wrong or you want me to change something, click <strong>Request a revision</strong> from the same page. Your purchase includes two rounds of revisions.</p>' +
 '<p style="margin-top:28px;">— Ken Baker<br>BCS Memory Box</p>' +
