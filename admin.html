@@ -182,6 +182,16 @@ async function showDashboard() {
       '<div class="toolbar">' +
         '<h1>Customers</h1>' +
         '<div class="summary">' + rows.length + ' total</div>' +
+      '</div>' +
+      '<div style="border:1px solid #e0d8c8;border-radius:10px;padding:18px 20px;margin:0 0 22px;background:#faf7f0;">' +
+        '<h2 style="margin:0 0 4px;font-size:18px;">Add a free tester</h2>' +
+        '<p style="margin:0 0 12px;color:#6b5f48;font-size:14px;">Creates a free account (no payment, ready to record) and emails them their story link. For beta testers or gifts.</p>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
+          '<input id="comp-name" type="text" placeholder="Their name (e.g. Margaret)" style="flex:1;min-width:150px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
+          '<input id="comp-email" type="email" placeholder="Their email address" style="flex:1.4;min-width:200px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
+          '<button id="comp-add-btn" class="btn">Add free tester</button>' +
+        '</div>' +
+        '<p id="comp-status" style="margin:12px 0 0;font-size:14px;min-height:1em;"></p>' +
       '</div>';
     if (rows.length === 0) {
       html += '<div class="empty">No customers yet. As soon as someone signs up at /signup.html they\'ll appear here.</div>';
@@ -203,6 +213,27 @@ async function showDashboard() {
       html += '</tbody></table>';
     }
     document.getElementById('main').innerHTML = html;
+    var compBtn = document.getElementById('comp-add-btn');
+    if (compBtn) {
+      compBtn.addEventListener('click', async function(){
+        var nameEl = document.getElementById('comp-name');
+        var emailEl = document.getElementById('comp-email');
+        var statusEl = document.getElementById('comp-status');
+        var name = (nameEl.value || '').trim();
+        var email = (emailEl.value || '').trim();
+        if (!name || !email) { statusEl.style.color = '#a33'; statusEl.textContent = 'Please enter both a name and an email address.'; return; }
+        compBtn.disabled = true; var old = compBtn.textContent; compBtn.textContent = 'Adding…';
+        statusEl.style.color = '#6b5f48'; statusEl.textContent = 'Creating the account and sending their link…';
+        try {
+          var res = await api('/api/admin/comp-customer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: name, email: email }) });
+          statusEl.style.color = '#2e6b2e'; statusEl.textContent = res.message || ('Added ' + name + '.');
+          nameEl.value = ''; emailEl.value = '';
+        } catch (e) {
+          statusEl.style.color = '#a33'; statusEl.textContent = e.message || 'Could not add them. Please try again.';
+        }
+        compBtn.disabled = false; compBtn.textContent = old;
+      });
+    }
     document.querySelectorAll('tr.clickable').forEach(function(tr){
       tr.addEventListener('click', function(){ showCustomer(tr.getAttribute('data-id')); });
     });

@@ -5,6 +5,7 @@
 const express = require('express');
 const db = require('../lib/db');
 const storage = require('../lib/storage');
+const mailer = require('../lib/mailer');
 
 const router = express.Router();
 router.use(express.json());
@@ -361,6 +362,62 @@ router.post('/draft/:id/approve', requireAdmin, async (req, res) => {
     res.json({ ok: true, delivered: true });
   } catch (err) {
     console.error('[admin/draft/approve] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/comp-customer   { name, email }
+// Creates a FREE (comped) customer — already in 'recording' status, no Stripe
+// payment — and emails them their story link. Used for beta testers and gifts.
+// Comped accounts are recognizable later by having paid_at set but no
+// stripe_payment_intent_id.
+// ---------------------------------------------------------------------------
+router.post('/comp-customer', requireAdmin, async (req, res) => {
+  try {
+    const name = (req.body.name || '').trim();
+    const email = (req.body.email || '').trim().toLowerCase();
+    if (!name) return res.status(400).json({ error: 'Please enter a name.' });
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+
+    const existing = await db.queryOne(
+      'SELECT id, access_token FROM customers WHERE email = $1', [email]);
+    if (existing) {
+      const url = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(existing.access_token);
+      return res.status(409).json({ error: 'A customer with that email already exists.', portalUrl: url });
+    }
+
+    const accessToken = db.randomToken(24);
+    const created = await db.queryOne(
+      `INSERT INTO customers (email, name, access_token, status, paid_at)
+       VALUES ($1, $2, $3, 'recording', NOW())
+       RETURNING id, access_token`,
+      [email, name, accessToken]);
+
+    const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(created.access_token);
+
+    let emailed = true;
+    try {
+      await mailer.sendStoryLink(email, name, created.access_token, true);
+    } catch (mailErr) {
+      emailed = false;
+      console.error('[admin/comp-customer] welcome email failed:', mailErr.message);
+    }
+
+    console.log('[admin/comp-customer] created free tester ' + email + (emailed ? ' (emailed)' : ' (email FAILED)'));
+    res.json({
+      ok: true,
+      customerId: created.id,
+      portalUrl: portalUrl,
+      emailed: emailed,
+      message: emailed
+        ? ('Added ' + name + ' as a free tester — welcome email sent to ' + email + '.')
+        : ('Added ' + name + ', but the welcome email did not send. Share this link with them directly: ' + portalUrl),
+    });
+  } catch (err) {
+    console.error('[admin/comp-customer] error:', err);
     res.status(500).json({ error: err.message });
   }
 });
