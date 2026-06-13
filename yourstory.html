@@ -348,6 +348,14 @@ function renderError(msg) {
     // Set header
     document.getElementById('header-welcome').textContent = 'Signed in as ' + data.customer.email;
 
+    // Remember this device so the customer can return with ONE CLICK from the
+    // homepage next time — no need to retype their email. Stored locally on
+    // their own device only; cleared if they clear their browser.
+    try {
+      localStorage.setItem('bcs_story_token', token);
+      localStorage.setItem('bcs_story_name', (data.customer.name || '').split(' ')[0] || '');
+    } catch (e) { /* private mode / storage off — non-fatal, email fallback still works */ }
+
     // Pick the renderer based on status
     var status = data.customer.status;
     var html;

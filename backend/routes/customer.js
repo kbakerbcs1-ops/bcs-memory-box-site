@@ -3,6 +3,7 @@
 
 const express = require('express');
 const db = require('../lib/db');
+const mailer = require('../lib/mailer');
 
 const router = express.Router();
 router.use(express.json());
@@ -294,6 +295,47 @@ escapeHtml(feedback) +
   } catch (err) {
     console.error('[customer/request-revision] error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/request-link
+// Body: { email }
+// A returning customer who lost their story link asks for it again. We email
+// the link to the address on file. Always responds the same way whether or not
+// the email matches an account, so it can't be used to discover who has one.
+// ---------------------------------------------------------------------------
+router.post('/request-link', async (req, res) => {
+  const GENERIC = 'If that email has a Memory Box story, we just sent the link to it. Please check your inbox (and your spam folder).';
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+
+    const customer = await db.queryOne(
+      'SELECT name, access_token, paid_at FROM customers WHERE email = $1',
+      [email]
+    );
+
+    // Only paying customers have a story page to return to.
+    if (customer && customer.paid_at) {
+      try {
+        await mailer.sendStoryLink(email, customer.name, customer.access_token, false);
+        console.log('[customer/request-link] link re-sent to ' + email);
+      } catch (mailErr) {
+        // Log only — still return the generic message so the endpoint never
+        // reveals whether an email is registered.
+        console.error('[customer/request-link] email send failed:', mailErr.message);
+      }
+    } else {
+      console.log('[customer/request-link] no paid account for ' + email + ' (generic response)');
+    }
+
+    res.json({ ok: true, message: GENERIC });
+  } catch (err) {
+    console.error('[customer/request-link] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });
 

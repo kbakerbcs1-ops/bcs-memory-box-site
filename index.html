@@ -380,6 +380,7 @@
     <p class="subtitle">Preserving the stories that matter most</p>
     <p class="lead">A simple way to record your life story — in your own voice, for the people you love. Record at your own pace, on the phone you already own. No technology to learn.</p>
     <a href="#trial-widget" class="btn-primary">Try It Free — Record 90 Seconds</a>
+    <p class="hero-return" style="margin-top:16px;"><a id="hero-return-link" href="#return-widget" style="color:#f3ead6;text-decoration:underline;font-size:16px;">Already started your story? Return to it &rarr;</a></p>
     <div class="scroll-cue">scroll to learn more ↓</div>
 </header>
 
@@ -697,6 +698,21 @@
     <p>Try the 90-second sample above to hear what your story will sound like polished. When you're ready, start Your Story ($125) below — you'll create your account, then record at your own pace.</p>
     <a href="/signup.html" class="btn-primary">Start Your Story — $125</a>
     <p class="or-call">Questions first? Email me at <a href="mailto:kbakerbcs1@gmail.com">kbakerbcs1@gmail.com</a></p>
+    <p class="or-call" style="margin-top:10px;"><a href="#return-widget" style="color:#8b5a2b;">Already started your story? Return to it &rarr;</a></p>
+</section>
+
+
+<!-- RETURN TO YOUR STORY -->
+<section class="final-cta" id="return-widget" style="padding-top:8px;">
+    <h2 id="return-heading">Already started your story?</h2>
+    <div id="return-continue" style="display:none;max-width:440px;margin:0 auto 24px;text-align:center;"></div>
+    <p id="return-intro">Enter the email you signed up with, and we'll send you the link to your story so you can pick up right where you left off.</p>
+    <div style="max-width:440px;margin:22px auto 0;text-align:left;">
+        <input type="email" id="return-email" placeholder="Your email address" autocomplete="email"
+               style="width:100%;box-sizing:border-box;padding:15px 16px;font-size:18px;border:1px solid #c9bfae;border-radius:8px;font-family:Georgia,serif;margin-bottom:14px;" />
+        <button id="return-send" class="btn-primary" style="width:100%;cursor:pointer;border:none;">Email me my story link</button>
+        <p id="return-status" role="status" aria-live="polite" style="min-height:1.4em;margin:16px 0 0;font-size:16px;text-align:center;"></p>
+    </div>
 </section>
 
 </main>
@@ -706,5 +722,57 @@
     <p>kbakerbcs1@gmail.com &nbsp;•&nbsp; www.bcsmemorybox.com</p>
 </footer>
 
+<script>
+(function(){
+  var API = 'https://bcs-memory-box-site.onrender.com/api/customer/request-link';
+  var btn = document.getElementById('return-send');
+  var emailEl = document.getElementById('return-email');
+  var statusEl = document.getElementById('return-status');
+  if (!btn || !emailEl || !statusEl) return;
+
+  // If this device has already opened a story, offer a one-click return so the
+  // customer never has to retype their email on their own device.
+  try {
+    var savedToken = localStorage.getItem('bcs_story_token');
+    var savedName = (localStorage.getItem('bcs_story_name') || '').replace(/[<>&"]/g, '');
+    if (savedToken) {
+      var portal = '/yourstory.html?token=' + encodeURIComponent(savedToken);
+      var cont = document.getElementById('return-continue');
+      var heading = document.getElementById('return-heading');
+      var intro = document.getElementById('return-intro');
+      var heroLink = document.getElementById('hero-return-link');
+      if (cont) {
+        cont.innerHTML =
+          (savedName ? '<p style="font-size:20px;margin:0 0 14px;">Welcome back, ' + savedName + '!</p>' : '') +
+          '<a href="' + portal + '" class="btn-primary" style="display:inline-block;border:none;cursor:pointer;text-decoration:none;">Continue your story &rarr;</a>';
+        cont.style.display = 'block';
+      }
+      if (heading) heading.textContent = 'Welcome back';
+      if (intro) {
+        intro.textContent = "On a different device, or this isn't you? Enter your email and we'll send your link.";
+        intro.style.fontSize = '15px';
+        intro.style.color = '#7a726a';
+      }
+      if (heroLink) { heroLink.textContent = 'Continue your story \u2192'; heroLink.setAttribute('href', portal); }
+    }
+  } catch (e) { /* storage off — the email box below still works */ }
+  function setStatus(msg, color){ statusEl.textContent = msg; statusEl.style.color = color || '#2a2520'; }
+  async function submit(){
+    var email = (emailEl.value || '').trim();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setStatus('Please enter a valid email address.', '#a33'); return; }
+    btn.disabled = true; var old = btn.textContent; btn.textContent = 'Sending…';
+    setStatus('One moment — sending your link. This can take up to a minute the first time.', '#5a534c');
+    try {
+      var resp = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: email }) });
+      var data = await resp.json().catch(function(){ return {}; });
+      if (resp.ok) { setStatus(data.message || 'Check your email for your story link.', '#2e6b2e'); emailEl.value = ''; }
+      else { setStatus(data.error || 'Something went wrong. Please try again.', '#a33'); }
+    } catch (e) { setStatus('Could not reach the server. Please check your connection and try again.', '#a33'); }
+    btn.disabled = false; btn.textContent = old;
+  }
+  btn.addEventListener('click', submit);
+  emailEl.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+})();
+</script>
 </body>
 </html>

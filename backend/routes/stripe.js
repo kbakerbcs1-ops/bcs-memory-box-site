@@ -13,6 +13,7 @@
 const express = require('express');
 const Stripe = require('stripe');
 const db = require('../lib/db');
+const mailer = require('../lib/mailer');
 
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -132,7 +133,7 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
       }
 
       const customer = await db.queryOne(
-        'SELECT id, status, paid_at FROM customers WHERE access_token = $1',
+        'SELECT id, status, paid_at, email, name, access_token FROM customers WHERE access_token = $1',
         [accessToken]
       );
       if (!customer) {
@@ -157,6 +158,15 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
       );
 
       console.log('[stripe/webhook] customer ' + customer.id + ' marked paid');
+
+      // Send the welcome email with the link back to their story. Wrapped so a
+      // mail failure can never fail the webhook (Stripe would otherwise retry).
+      try {
+        await mailer.sendStoryLink(customer.email, customer.name, customer.access_token, true);
+        console.log('[stripe/webhook] welcome email sent to ' + customer.email);
+      } catch (mailErr) {
+        console.error('[stripe/webhook] welcome email failed (non-fatal):', mailErr.message);
+      }
     } else {
       console.log('[stripe/webhook] received event ' + event.type + ' — not handled, ignoring');
     }
