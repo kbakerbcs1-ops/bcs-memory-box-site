@@ -364,3 +364,45 @@ function escapeHtml(s) {
 }
 
 module.exports = router;
+
+
+// ----------------------------------------------------------------------------
+// POST /api/customer/reopen-recording?token=<access_token>
+// Lets a customer who already has a finished (delivered) or draft-ready memoir
+// go back into recording mode to add more stories. Flips status back to
+// 'recording'. Existing recordings + transcripts are preserved; when they click
+// "I'm done" again, the cleanup pipeline re-runs over everything and produces an
+// updated draft for the admin to review and re-deliver.
+// NOTE: registered after module.exports on purpose — the router is exported by
+// reference, so routes added here are still part of the exported router.
+// ----------------------------------------------------------------------------
+router.post('/reopen-recording', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+
+    const customer = await db.queryOne(
+      'SELECT id, status, paid_at FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+    if (!customer.paid_at) {
+      return res.status(403).json({ error: 'Payment is required before recording.' });
+    }
+
+    // Reopen only from a finished state. From other states this is a safe no-op,
+    // so we never interrupt an in-flight processing run or an unpaid account.
+    if (customer.status === 'delivered' || customer.status === 'draft_ready') {
+      await db.query("UPDATE customers SET status = 'recording' WHERE id = $1", [customer.id]);
+      return res.json({ ok: true, reopened: true, message: 'You can add more to your story now.' });
+    }
+    if (customer.status === 'processing') {
+      return res.json({ ok: true, reopened: false, message: 'Your memoir is being prepared right now. Once it is ready you can add more.' });
+    }
+    // Already recording (or revision_requested / error) — just let them in.
+    return res.json({ ok: true, reopened: false, message: 'You can add to your story now.' });
+  } catch (err) {
+    console.error('[customer/reopen-recording] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
