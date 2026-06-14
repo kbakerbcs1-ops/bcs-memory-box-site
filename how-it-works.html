@@ -74,7 +74,13 @@
   var printBtn = document.getElementById('print-btn');
   printBtn.addEventListener('click', function(){ window.print(); });
 
+  var synth = window.speechSynthesis;
   var speaking = false;
+  var keepAlive = null;
+
+  // Voices load asynchronously in many browsers; warm them up on page load.
+  if(synth){ try{ synth.getVoices(); synth.onvoiceschanged = function(){ synth.getVoices(); }; }catch(e){} }
+
   function buildText(){
     var parts = [];
     var intro = document.querySelector('.intro'); if(intro) parts.push(intro.textContent);
@@ -82,18 +88,38 @@
     var note = document.querySelector('.note'); if(note) parts.push(note.textContent);
     return parts.join('. ');
   }
-  function stopReading(){ try{ window.speechSynthesis.cancel(); }catch(e){} speaking=false; listenBtn.innerHTML='&#128266; Read this to me'; }
-  listenBtn.addEventListener('click', function(){
-    if(!('speechSynthesis' in window)){ listenBtn.textContent='Sorry, this browser cannot read aloud'; return; }
-    if(speaking){ stopReading(); return; }
+  function setIdle(){ speaking=false; listenBtn.innerHTML='&#128266; Read this to me'; if(keepAlive){ clearInterval(keepAlive); keepAlive=null; } }
+  function setPlaying(){ speaking=true; listenBtn.innerHTML='&#9209; Stop reading'; }
+
+  function startSpeaking(){
+    if(!synth) return;
+    synth.cancel();
     var u = new SpeechSynthesisUtterance(buildText());
     u.lang='en-US'; u.rate=0.95; u.pitch=1;
-    u.onend=stopReading; u.onerror=stopReading;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-    speaking=true; listenBtn.innerHTML='&#9209; Stop reading';
+    var vs = synth.getVoices();
+    var en = vs.filter(function(v){ return /^en/i.test(v.lang); });
+    if(en.length) u.voice = en[0];
+    u.onend=setIdle; u.onerror=setIdle;
+    synth.speak(u);
+    setPlaying();
+    // Some browsers (Chrome) stop long speech after ~15s; gently keep it alive.
+    if(keepAlive) clearInterval(keepAlive);
+    keepAlive = setInterval(function(){ if(synth.speaking){ try{ synth.pause(); synth.resume(); }catch(e){} } else { clearInterval(keepAlive); keepAlive=null; } }, 9000);
+  }
+
+  listenBtn.addEventListener('click', function(){
+    if(!synth){ listenBtn.textContent='Sorry, this browser cannot read aloud'; return; }
+    if(speaking){ synth.cancel(); setIdle(); return; }
+    if(synth.getVoices().length === 0){
+      var started=false;
+      var go=function(){ if(!started){ started=true; startSpeaking(); } };
+      synth.onvoiceschanged = go;
+      setTimeout(go, 350);
+    } else {
+      startSpeaking();
+    }
   });
-  window.addEventListener('beforeunload', stopReading);
+  window.addEventListener('beforeunload', function(){ if(synth) synth.cancel(); });
 })();
 </script>
 </body>
