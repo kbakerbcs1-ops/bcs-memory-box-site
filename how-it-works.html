@@ -78,7 +78,6 @@
   var speaking = false;
   var keepAlive = null;
 
-  // Voices load asynchronously in many browsers; warm them up on page load.
   if(synth){ try{ synth.getVoices(); synth.onvoiceschanged = function(){ synth.getVoices(); }; }catch(e){} }
 
   function buildText(){
@@ -88,6 +87,15 @@
     var note = document.querySelector('.note'); if(note) parts.push(note.textContent);
     return parts.join('. ');
   }
+  // Prefer a warmer, more natural-sounding English voice when the device has one.
+  function pickVoice(vs){
+    if(!vs || !vs.length) return null;
+    var prefs = ['Google US English','Samantha','Ava','Allison','Joelle','Microsoft Aria','Microsoft Jenny','Microsoft Zira','Google UK English Female','Karen','Moira','Tessa'];
+    for(var i=0;i<prefs.length;i++){ for(var j=0;j<vs.length;j++){ if(vs[j].name.indexOf(prefs[i])!==-1) return vs[j]; } }
+    for(var k=0;k<vs.length;k++){ if(/^en[-_]US/i.test(vs[k].lang)) return vs[k]; }
+    for(var m=0;m<vs.length;m++){ if(/^en/i.test(vs[m].lang)) return vs[m]; }
+    return null;
+  }
   function setIdle(){ speaking=false; listenBtn.innerHTML='&#128266; Read this to me'; if(keepAlive){ clearInterval(keepAlive); keepAlive=null; } }
   function setPlaying(){ speaking=true; listenBtn.innerHTML='&#9209; Stop reading'; }
 
@@ -95,14 +103,12 @@
     if(!synth) return;
     synth.cancel();
     var u = new SpeechSynthesisUtterance(buildText());
-    u.lang='en-US'; u.rate=0.95; u.pitch=1;
-    var vs = synth.getVoices();
-    var en = vs.filter(function(v){ return /^en/i.test(v.lang); });
-    if(en.length) u.voice = en[0];
+    u.lang='en-US'; u.rate=0.82; u.pitch=1.02;
+    var v = pickVoice(synth.getVoices());
+    if(v) u.voice = v;
     u.onend=setIdle; u.onerror=setIdle;
     synth.speak(u);
     setPlaying();
-    // Some browsers (Chrome) stop long speech after ~15s; gently keep it alive.
     if(keepAlive) clearInterval(keepAlive);
     keepAlive = setInterval(function(){ if(synth.speaking){ try{ synth.pause(); synth.resume(); }catch(e){} } else { clearInterval(keepAlive); keepAlive=null; } }, 9000);
   }
