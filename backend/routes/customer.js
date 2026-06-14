@@ -406,3 +406,42 @@ router.post('/reopen-recording', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+// ----------------------------------------------------------------------------
+// GET /api/customer/recording-audio?token=<access_token>&id=<recording_id>
+// Streams one of the customer's OWN recordings back so they can listen to it
+// on their story page. Ownership is enforced: the recording must belong to the
+// customer that owns the access token. (Registered after module.exports on
+// purpose — same reason as reopen-recording above.)
+// ----------------------------------------------------------------------------
+router.get('/recording-audio', async (req, res) => {
+  try {
+    const token = req.query.token;
+    const id = req.query.id;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    if (!id) return res.status(400).json({ error: 'Missing recording id' });
+
+    const customer = await db.queryOne(
+      'SELECT id FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const recording = await db.queryOne(
+      'SELECT storage_key, original_filename FROM recordings WHERE id = $1 AND customer_id = $2',
+      [id, customer.id]
+    );
+    if (!recording) return res.status(404).json({ error: 'Recording not found' });
+
+    const { stream, contentType, contentLength } = await storage.getObjectStream(recording.storage_key);
+    res.setHeader('Content-Type', contentType || 'audio/mpeg');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('[customer/recording-audio] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
