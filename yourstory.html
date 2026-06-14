@@ -304,6 +304,12 @@ function renderDelivered(customer) {
       '<h1>Here is your memoir.</h1>' +
       '<p>This is your final document. You can download it anytime from this page. If you would still like to add photographs or order a hardcover book later, just reach out to Ken.</p>' +
       '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your memoir (.docx)</a></p>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h2>Want to add more to your story?</h2>' +
+      '<p>Remembered something new? You can keep adding recordings anytime &mdash; Ken will fold them into an updated memoir for you.</p>' +
+      '<button class="btn btn-secondary" onclick="reopenStory(this)">Add more to your story</button>' +
+      '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
     '</div>';
 }
 
@@ -753,6 +759,24 @@ function bindRevisionHandler() {
     }
   });
 }
+// Lets a delivered/draft-ready customer reopen recording to add more stories.
+async function reopenStory(btn) {
+  var token = getToken();
+  if (!token) return;
+  var statusEl = document.getElementById('reopen-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'One moment…'; }
+  try {
+    var resp = await fetch(API_BASE + '/api/customer/reopen-recording?token=' + encodeURIComponent(token), { method: 'POST' });
+    var data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Could not reopen your story.');
+    if (statusEl) { statusEl.textContent = 'Opening your recording page…'; statusEl.style.color = '#2a5a2a'; }
+    setTimeout(function(){ window.location.reload(); }, 900);
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = err.message || 'Something went wrong.'; statusEl.style.color = '#c0392b'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Add more to your story'; }
+  }
+}
+
 </script>
 
 </body>
