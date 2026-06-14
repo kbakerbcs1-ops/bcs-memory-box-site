@@ -74,58 +74,43 @@
   var printBtn = document.getElementById('print-btn');
   printBtn.addEventListener('click', function(){ window.print(); });
 
+  // Primary: the narration recorded in a real human voice.
+  var audio = new Audio('/how-it-works-narration.mp3');
+  audio.preload = 'none';
   var synth = window.speechSynthesis;
-  var speaking = false;
-  var keepAlive = null;
+  var mode = 'idle'; // idle | audio | tts
 
-  if(synth){ try{ synth.getVoices(); synth.onvoiceschanged = function(){ synth.getVoices(); }; }catch(e){} }
+  function setIdle(){ mode='idle'; listenBtn.innerHTML='&#128266; Read this to me'; }
+  function setPlaying(){ listenBtn.innerHTML='&#9209; Stop'; }
+  audio.addEventListener('ended', setIdle);
 
+  // Fallback only: browser text-to-speech, used if the recording can't play.
+  if(synth){ try{ synth.getVoices(); synth.onvoiceschanged=function(){ synth.getVoices(); }; }catch(e){} }
   function buildText(){
-    var parts = [];
-    var intro = document.querySelector('.intro'); if(intro) parts.push(intro.textContent);
+    var parts=[]; var intro=document.querySelector('.intro'); if(intro) parts.push(intro.textContent);
     document.querySelectorAll('.step').forEach(function(s){ parts.push(s.textContent.replace(/\s+/g,' ').trim()); });
-    var note = document.querySelector('.note'); if(note) parts.push(note.textContent);
+    var note=document.querySelector('.note'); if(note) parts.push(note.textContent);
     return parts.join('. ');
   }
-  // Prefer a warmer, more natural-sounding English voice when the device has one.
-  function pickVoice(vs){
-    if(!vs || !vs.length) return null;
-    var prefs = ['Google US English','Samantha','Ava','Allison','Joelle','Microsoft Aria','Microsoft Jenny','Microsoft Zira','Google UK English Female','Karen','Moira','Tessa'];
-    for(var i=0;i<prefs.length;i++){ for(var j=0;j<vs.length;j++){ if(vs[j].name.indexOf(prefs[i])!==-1) return vs[j]; } }
-    for(var k=0;k<vs.length;k++){ if(/^en[-_]US/i.test(vs[k].lang)) return vs[k]; }
-    for(var m=0;m<vs.length;m++){ if(/^en/i.test(vs[m].lang)) return vs[m]; }
-    return null;
-  }
-  function setIdle(){ speaking=false; listenBtn.innerHTML='&#128266; Read this to me'; if(keepAlive){ clearInterval(keepAlive); keepAlive=null; } }
-  function setPlaying(){ speaking=true; listenBtn.innerHTML='&#9209; Stop reading'; }
-
-  function startSpeaking(){
-    if(!synth) return;
+  function ttsStart(){
+    if(!synth){ listenBtn.textContent='Sorry, this browser cannot read aloud'; return; }
     synth.cancel();
-    var u = new SpeechSynthesisUtterance(buildText());
+    var u=new SpeechSynthesisUtterance(buildText());
     u.lang='en-US'; u.rate=0.82; u.pitch=1.02;
-    var v = pickVoice(synth.getVoices());
-    if(v) u.voice = v;
     u.onend=setIdle; u.onerror=setIdle;
-    synth.speak(u);
-    setPlaying();
-    if(keepAlive) clearInterval(keepAlive);
-    keepAlive = setInterval(function(){ if(synth.speaking){ try{ synth.pause(); synth.resume(); }catch(e){} } else { clearInterval(keepAlive); keepAlive=null; } }, 9000);
+    synth.speak(u); mode='tts'; setPlaying();
   }
+  function stopAll(){ try{ audio.pause(); audio.currentTime=0; }catch(e){} if(synth){ try{ synth.cancel(); }catch(e){} } setIdle(); }
 
   listenBtn.addEventListener('click', function(){
-    if(!synth){ listenBtn.textContent='Sorry, this browser cannot read aloud'; return; }
-    if(speaking){ synth.cancel(); setIdle(); return; }
-    if(synth.getVoices().length === 0){
-      var started=false;
-      var go=function(){ if(!started){ started=true; startSpeaking(); } };
-      synth.onvoiceschanged = go;
-      setTimeout(go, 350);
-    } else {
-      startSpeaking();
-    }
+    if(mode!=='idle'){ stopAll(); return; }
+    audio.currentTime=0;
+    var p=audio.play();
+    mode='audio'; setPlaying();
+    if(p && p.catch){ p.catch(function(){ mode='idle'; ttsStart(); }); }
   });
-  window.addEventListener('beforeunload', function(){ if(synth) synth.cancel(); });
+  audio.addEventListener('error', function(){ if(mode==='audio'){ ttsStart(); } });
+  window.addEventListener('beforeunload', function(){ try{ audio.pause(); }catch(e){} if(synth){ try{ synth.cancel(); }catch(e){} } });
 })();
 </script>
 </body>
