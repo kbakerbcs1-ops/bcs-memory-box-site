@@ -572,7 +572,12 @@ function bindRecordHandler() {
         return;
       }
       chunks = [];
-      mediaRecorder = new MediaRecorder(stream);
+      var __recTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+        var __recMime = '';
+        for (var __i = 0; __i < __recTypes.length; __i++) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported(__recTypes[__i])) { __recMime = __recTypes[__i]; break; }
+        }
+        mediaRecorder = __recMime ? new MediaRecorder(stream, { mimeType: __recMime }) : new MediaRecorder(stream);
       mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
       mediaRecorder.onstop = function() {
         audioBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
@@ -621,7 +626,7 @@ function bindRecordHandler() {
     statusEl.style.color = '#5a4a3a';
 
     var mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
-    var ext = mime.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
+    var ext = mime.indexOf('mp4') !== -1 ? 'm4a' : mime.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
     var fname = 'recording-' + Date.now() + '.' + ext;
     var fd = new FormData();
     fd.append('audio', audioBlob, fname);
