@@ -384,6 +384,7 @@ function renderError(msg) {
     bindPhotoHandler();
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
+      bindPhotoDrop();
   } catch (e) {
     console.error('yourstory load error:', e);
     document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
@@ -776,6 +777,49 @@ async function reopenStory(btn) {
     if (statusEl) { statusEl.textContent = err.message || 'Something went wrong.'; statusEl.style.color = '#c0392b'; }
     if (btn) { btn.disabled = false; btn.textContent = 'Add more to your story'; }
   }
+}
+
+// Let a customer drag a photo straight onto the photo box (easy on a Mac:
+// drag from the Photos app). Reuses the existing #photo-file upload handler.
+function bindPhotoDrop() {
+  var fileInput = document.getElementById('photo-file');
+  if (!fileInput) return;
+  var zone = fileInput.closest('.upload-zone') || fileInput.closest('.card') || fileInput.parentElement;
+  if (!zone) return;
+  if (!document.getElementById('photo-drop-hint')) {
+    var hint = document.createElement('p');
+    hint.id = 'photo-drop-hint';
+    hint.style.cssText = 'margin-top:10px;font-size:14px;color:#5a4a3a;';
+    hint.innerHTML = 'On a computer: open your <strong>Photos</strong> app and <strong>drag a picture right into this box</strong>. On a phone, just tap the button above.';
+    zone.appendChild(hint);
+  }
+  function stop(e) { e.preventDefault(); e.stopPropagation(); }
+  ['dragenter','dragover'].forEach(function(ev) {
+    zone.addEventListener(ev, function(e) { stop(e); zone.style.outline = '3px dashed #8b5a2b'; zone.style.outlineOffset = '4px'; });
+  });
+  ['dragleave','dragend'].forEach(function(ev) {
+    zone.addEventListener(ev, function(e) { stop(e); zone.style.outline = ''; });
+  });
+  zone.addEventListener('drop', function(e) {
+    stop(e);
+    zone.style.outline = '';
+    var files = e.dataTransfer && e.dataTransfer.files;
+    var st = document.getElementById('photo-status');
+    if (!files || !files.length) return;
+    var file = files[0];
+    if (file.type && file.type.indexOf('image') !== 0) {
+      if (st) { st.textContent = 'That does not look like a photo — please drag an image file.'; st.style.color = '#c0392b'; }
+      return;
+    }
+    try {
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (err) {
+      if (st) { st.textContent = 'Could not read that photo. Try the Add a photo button instead.'; st.style.color = '#c0392b'; }
+    }
+  });
 }
 
 </script>
