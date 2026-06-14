@@ -196,6 +196,7 @@ function renderRecordingPage(data) {
         '</div>' +
         '<div class="recording-status ' + statusClass + '">' + statusLabel + '</div>' +
       '</div>';
+        html += '<audio controls preload="none" style="display:block;width:100%;margin-top:6px;" src="' + API_BASE + '/api/customer/recording-audio?token=' + encodeURIComponent(getToken()) + '&id=' + encodeURIComponent(r.id) + '"></audio>';
     });
     html += '</div>';
   }
