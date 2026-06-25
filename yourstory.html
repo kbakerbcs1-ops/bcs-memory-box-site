@@ -340,8 +340,30 @@ function renderError(msg) {
     return;
   }
 
+  // Progressive reassurance while Render's server wakes from sleep (cold start).
+  function setLoadingMsg(m){ var el=document.querySelector('#main .loading p'); if(el){ el.textContent=m; } }
+  var _t1=setTimeout(function(){ setLoadingMsg('Waking things up \u2014 the first visit of the day can take up to a minute. Hang tight\u2026'); },4000);
+  var _t2=setTimeout(function(){ setLoadingMsg('Almost there \u2014 still waking the server, thanks for your patience\u2026'); },25000);
+  // Fetch /me with a per-try timeout + a few automatic retries (a cold start often
+  // needs one request to wake the server and the next one succeeds).
+  async function fetchMe(){
+    for (var i=0;i<3;i++){
+      var ctrl=new AbortController();
+      var to=setTimeout(function(){ ctrl.abort(); },30000);
+      try { var r=await fetch(API_BASE + '/api/customer/me?token=' + encodeURIComponent(token), {signal:ctrl.signal}); clearTimeout(to); return r; }
+      catch(e){ clearTimeout(to); if(i<2){ await new Promise(function(res){ setTimeout(res,2000); }); } }
+    }
+    return null;
+  }
   try {
-    var resp = await fetch(API_BASE + '/api/customer/me?token=' + encodeURIComponent(token));
+    var resp = await fetchMe();
+    clearTimeout(_t1); clearTimeout(_t2);
+    if (!resp) {
+      document.getElementById('main').innerHTML =
+        renderError('It\u2019s taking longer than usual to reach the server \u2014 it\u2019s most likely just waking up. Wait a few seconds, then tap Retry.') +
+        '<div style="text-align:center;margin-top:-8px;"><button class="btn btn-large" onclick="window.location.reload()">Retry</button></div>';
+      return;
+    }
     if (!resp.ok) {
       var err = await resp.json().catch(function(){return {error:'Server error'};});
       document.getElementById('main').innerHTML = renderError(err.error || ('Could not load (status ' + resp.status + ')'));
