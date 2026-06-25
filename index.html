@@ -67,6 +67,7 @@
 
         /* ===== HERO ===== */
         .hero {
+            position: relative;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -373,12 +374,37 @@
             .hero { padding-top: 40px; }
             .what-list { grid-template-columns: 1fr; }
         }
+        /* ===== HERO SIDE: logo + tutorial video ===== */
+        .hero-side{position:absolute;top:104px;left:40px;width:280px;z-index:4;text-align:center;}
+        .hero-side .hero-logo{width:215px;height:auto;display:block;margin:0 auto 18px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.45);}
+        .hero-video-card{background:#fbf7ef;border-radius:16px;padding:12px 12px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.45);cursor:pointer;display:block;transition:transform .2s ease;}
+        .hero-video-card:hover{transform:translateY(-2px);text-decoration:none;}
+        .hero-video-thumb{position:relative;border-radius:10px;overflow:hidden;line-height:0;}
+        .hero-video-thumb img{width:100%;display:block;}
+        .hero-video-thumb .playbtn{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:62px;height:62px;border-radius:50%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;}
+        .hero-video-thumb .playbtn::after{content:'';border-left:19px solid #fff;border-top:12px solid transparent;border-bottom:12px solid transparent;margin-left:5px;}
+        .hero-video-card .vcap{color:#8B1A2B;font-weight:700;font-family:'Merriweather',Georgia,serif;font-size:18px;margin-top:10px;}
+        .hero-video-card .vsub{color:#6b5d4f;font-size:13px;margin-top:2px;}
+        .video-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:1000;align-items:center;justify-content:center;padding:20px;}
+        .video-modal.open{display:flex;}
+        .video-modal-inner{position:relative;width:min(92vw,980px);}
+        .video-modal-inner video{width:100%;border-radius:12px;display:block;box-shadow:0 12px 40px rgba(0,0,0,0.6);}
+        .video-close{position:absolute;top:-46px;right:0;background:none;border:none;color:#fff;font-size:42px;line-height:1;cursor:pointer;}
+        @media (max-width:1400px){.hero-side{position:static;left:auto;top:auto;width:300px;max-width:90%;margin:0 auto 32px;}}
     </style>
 </head>
 <body>
 
 <!-- HERO -->
 <header class="hero">
+    <div class="hero-side">
+        <img class="hero-logo" src="bcs-logo.png" alt="BCS Memory Box logo">
+        <a href="#" class="hero-video-card" onclick="openVideo();return false;" aria-label="Watch the How It Works video">
+            <div class="hero-video-thumb"><img src="tutorial-thumb.jpg" alt="How It Works video"><span class="playbtn"></span></div>
+            <div class="vcap">&#9654; Watch: How It Works</div>
+            <div class="vsub">A quick 90-second tour</div>
+        </a>
+    </div>
     <h1>BCS Memory Box</h1>
     <p class="subtitle">Preserving the stories that matter most</p>
     <p class="lead">A simple way to record your life story — in your own voice, for the people you love. Record at your own pace, on the phone you already own. No technology to learn.</p>
@@ -777,6 +803,17 @@
   btn.addEventListener('click', submit);
   emailEl.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); submit(); } });
 })();
+</script>
+<div id="video-modal" class="video-modal" onclick="closeVideo()">
+  <div class="video-modal-inner" onclick="event.stopPropagation()">
+    <button class="video-close" onclick="closeVideo()" aria-label="Close">&times;</button>
+    <video id="tutorial-video" src="tutorial-video.mp4" controls playsinline preload="none" poster="tutorial-thumb.jpg"></video>
+  </div>
+</div>
+<script>
+function openVideo(){var m=document.getElementById('video-modal');m.classList.add('open');var v=document.getElementById('tutorial-video');try{v.currentTime=0;v.play();}catch(e){}}
+function closeVideo(){var m=document.getElementById('video-modal');m.classList.remove('open');var v=document.getElementById('tutorial-video');try{v.pause();}catch(e){}}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeVideo();});
 </script>
 </body>
 </html>
