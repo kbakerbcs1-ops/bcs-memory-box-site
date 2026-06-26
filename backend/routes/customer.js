@@ -96,7 +96,7 @@ router.get('/me', async (req, res) => {
 
     const { rows: recordings } = await db.query(
       `SELECT id, original_filename, size_bytes, duration_seconds,
-              transcript_status, created_at
+              transcript_status, created_at, title
        FROM recordings
        WHERE customer_id = $1
        ORDER BY created_at ASC`,
@@ -240,6 +240,31 @@ router.delete('/photo/:id', async (req, res) => {
   } catch (err) {
     console.error('[customer/photo delete] error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/customer/recording/:id/title?token=<access_token>
+// Body: { title } — lets the customer label/rename one of their recordings.
+// ---------------------------------------------------------------------------
+router.put('/recording/:id/title', async (req, res) => {
+  try {
+    const token = req.query.token || (req.body && req.body.token);
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    let title = (req.body && typeof req.body.title === 'string') ? req.body.title.trim() : '';
+    if (title.length > 80) title = title.slice(0, 80);
+    const rec = await db.queryOne(
+      `SELECT r.id FROM recordings r
+       JOIN customers c ON c.id = r.customer_id
+       WHERE r.id = $1 AND c.access_token = $2`,
+      [req.params.id, token]
+    );
+    if (!rec) return res.status(404).json({ error: 'Recording not found' });
+    await db.query('UPDATE recordings SET title = $1 WHERE id = $2', [title || null, rec.id]);
+    res.json({ ok: true, title: title || null });
+  } catch (err) {
+    console.error('[customer/recording title] error:', err);
+    res.status(500).json({ error: 'Could not update the title. Please try again.' });
   }
 });
 

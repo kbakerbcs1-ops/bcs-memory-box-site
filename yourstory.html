@@ -98,6 +98,7 @@
 
 <script>
 var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+var RECORDING_TITLES = {};
 var SAVED_SAFE_HTML = '<strong>\u2713 Saved \u2014 and safe.</strong> Tell your stories in any order \u2014 I\u2019ll tie it all together into one flowing memoir at the end. Whenever you\u2019re ready for more, just go back to the homepage and tap <strong>Continue your story</strong> \u2014 you\u2019ll be right back where you left off.';
 
 // Read token from query string (?token=xyz)
@@ -110,6 +111,36 @@ function escapeHtml(s) {
   var div = document.createElement('div');
   div.textContent = s || '';
   return div.innerHTML;
+}
+
+// Inline editor for naming/renaming a recording (calls PUT .../recording/:id/title).
+function bindRecordingTitles() {
+  var token = getToken();
+  document.querySelectorAll('.rt-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.getAttribute('data-id');
+      var wrap = document.getElementById('rt-' + id);
+      if (!wrap) return;
+      wrap.innerHTML =
+        '<input type="text" class="rt-input" maxlength="80" placeholder="Name this memory (for example: war story)" style="font-size:16px;padding:7px 9px;border:1px solid #c9b79c;border-radius:6px;width:62%;max-width:300px;">' +
+        ' <button type="button" class="rt-save" style="font-size:14px;">Save</button>' +
+        ' <button type="button" class="rt-cancel" style="font-size:14px;margin-left:4px;">Cancel</button>';
+      var input = wrap.querySelector('.rt-input');
+      input.value = RECORDING_TITLES[id] || '';
+      input.focus();
+      wrap.querySelector('.rt-cancel').addEventListener('click', function() { window.location.reload(); });
+      function doSave() {
+        var saveBtn = wrap.querySelector('.rt-save');
+        saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+        fetch(API_BASE + '/api/customer/recording/' + encodeURIComponent(id) + '/title?token=' + encodeURIComponent(token), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: input.value.trim() })
+        }).then(function(r) { return r.json(); }).then(function() { window.location.reload(); })
+          .catch(function() { saveBtn.disabled = false; saveBtn.textContent = 'Save'; alert('Could not save the name - please try again.'); });
+      }
+      wrap.querySelector('.rt-save').addEventListener('click', doSave);
+      input.addEventListener('keydown', function(e) { if (e.key === 'Enter') doSave(); });
+    });
+  });
 }
 
 function formatDate(iso) {
@@ -187,15 +218,20 @@ function renderRecordingPage(data) {
     html += '<div class="empty-recordings">No recordings yet. Upload your first one below.</div>';
   } else {
     html += '<div class="recordings">';
-    recordings.forEach(function(r) {
+    recordings.forEach(function(r, idx) {
       var statusClass = r.transcript_status === 'completed' ? 'completed' :
                         r.transcript_status === 'error' ? 'error' : 'pending';
       var statusLabel = r.transcript_status === 'completed' ? 'Ready' :
                         r.transcript_status === 'error' ? 'Error' :
                         r.transcript_status === 'transcribing' ? 'Processing' : 'Waiting';
+      RECORDING_TITLES[r.id] = (r.title || '');
+      var displayTitle = (r.title && r.title.trim()) ? r.title : ('Recording ' + (idx + 1));
       html += '<div class="recording-row">' +
         '<div class="recording-info">' +
-          '<div class="recording-name">' + escapeHtml(r.original_filename || 'Recording') + '</div>' +
+          '<div class="recording-name" id="rt-' + r.id + '">' +
+            '<span class="rt-text">' + escapeHtml(displayTitle) + '</span>' +
+            '<button type="button" class="rt-edit" data-id="' + r.id + '" aria-label="Rename this recording" style="background:none;border:none;color:#8b5a2b;cursor:pointer;font-size:13px;text-decoration:underline;padding:0 0 0 10px;">Rename</button>' +
+          '</div>' +
           '<div class="recording-meta">' + formatDate(r.created_at) + ' · ' + formatSize(r.size_bytes) + '</div>' +
         '</div>' +
         '<div class="recording-status ' + statusClass + '">' + statusLabel + '</div>' +
@@ -412,6 +448,7 @@ function renderError(msg) {
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
       bindPhotoDrop();
+    bindRecordingTitles();
   } catch (e) {
     console.error('yourstory load error:', e);
     document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
