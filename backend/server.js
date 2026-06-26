@@ -19,7 +19,7 @@ const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max for trial
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB cap for the 90-second trial (blocks oversized/abusive uploads)
 });
 
 const PORT = process.env.PORT || 3000;
@@ -138,7 +138,6 @@ app.post('/trial', upload.single('audio'), async (req, res) => {
     console.error('Trial error:', err);
     res.status(500).json({
       error: 'Something went wrong on our end. Try again, or email Ken directly.',
-      detail: err.message,
     });
   }
 });
