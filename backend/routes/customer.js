@@ -269,6 +269,32 @@ router.put('/recording/:id/title', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// PUT /api/customer/photo/:id/caption?token=<access_token>
+// Body: { caption } — lets the customer name/caption a photo after uploading
+// (name + date, e.g. "Mom & Dad, Christmas 1975").
+// ---------------------------------------------------------------------------
+router.put('/photo/:id/caption', async (req, res) => {
+  try {
+    const token = req.query.token || (req.body && req.body.token);
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    let caption = (req.body && typeof req.body.caption === 'string') ? req.body.caption.trim() : '';
+    if (caption.length > 500) caption = caption.slice(0, 500);
+    const photo = await db.queryOne(
+      `SELECT p.id FROM photos p
+       JOIN customers c ON c.id = p.customer_id
+       WHERE p.id = $1 AND c.access_token = $2`,
+      [req.params.id, token]
+    );
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+    await db.query('UPDATE photos SET caption = $1 WHERE id = $2', [caption || null, photo.id]);
+    res.json({ ok: true, caption: caption || null });
+  } catch (err) {
+    console.error('[customer/photo caption] error:', err);
+    res.status(500).json({ error: 'Could not save the caption. Please try again.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/customer/request-revision?token=<access_token>
 // Body: { feedback: "What I want changed..." }
 // Saves the feedback on the most recent draft, flips customer status, emails Ken.

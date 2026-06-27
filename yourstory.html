@@ -99,6 +99,7 @@
 <script>
 var API_BASE = 'https://bcs-memory-box-site.onrender.com';
 var RECORDING_TITLES = {};
+var PHOTO_CAPTIONS = {};
 var SAVED_SAFE_HTML = '<strong>\u2713 Saved \u2014 and safe.</strong> Tell your stories in any order \u2014 I\u2019ll tie it all together into one flowing memoir at the end. Whenever you\u2019re ready for more, just go back to the homepage and tap <strong>Continue your story</strong> \u2014 you\u2019ll be right back where you left off.';
 
 // Read token from query string (?token=xyz)
@@ -111,6 +112,36 @@ function escapeHtml(s) {
   var div = document.createElement('div');
   div.textContent = s || '';
   return div.innerHTML;
+}
+
+// Inline editor for naming/captioning a photo (calls PUT .../photo/:id/caption).
+function bindPhotoCaptions() {
+  var token = getToken();
+  document.querySelectorAll('.pc-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.getAttribute('data-id');
+      var wrap = document.getElementById('pc-' + id);
+      if (!wrap) return;
+      wrap.innerHTML =
+        '<input type="text" class="pc-input" maxlength="500" placeholder="Name and date (e.g. Mom and Dad, Christmas 1975)" style="font-size:15px;padding:7px 9px;border:1px solid #c9b79c;border-radius:6px;width:150px;display:block;margin:0 auto 6px;">' +
+        '<button type="button" class="pc-save" style="font-size:13px;">Save</button>' +
+        ' <button type="button" class="pc-cancel" style="font-size:13px;margin-left:4px;">Cancel</button>';
+      var input = wrap.querySelector('.pc-input');
+      input.value = PHOTO_CAPTIONS[id] || '';
+      input.focus();
+      wrap.querySelector('.pc-cancel').addEventListener('click', function() { window.location.reload(); });
+      function doSave() {
+        var saveBtn = wrap.querySelector('.pc-save');
+        saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+        fetch(API_BASE + '/api/customer/photo/' + encodeURIComponent(id) + '/caption?token=' + encodeURIComponent(token), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caption: input.value.trim() })
+        }).then(function(r) { return r.json(); }).then(function() { window.location.reload(); })
+          .catch(function() { saveBtn.disabled = false; saveBtn.textContent = 'Save'; alert('Could not save - please try again.'); });
+      }
+      wrap.querySelector('.pc-save').addEventListener('click', doSave);
+      input.addEventListener('keydown', function(e) { if (e.key === 'Enter') doSave(); });
+    });
+  });
 }
 
 // Inline editor for naming/renaming a recording (calls PUT .../recording/:id/title).
@@ -273,10 +304,11 @@ function renderRecordingPage(data) {
     html += '<div class="photo-grid">';
     photos.forEach(function(p) {
       var src = API_BASE + '/api/customer/photo/' + p.id + '?token=' + encodeURIComponent(getToken());
+      PHOTO_CAPTIONS[p.id] = (p.caption || '');
       html += '<div class="photo-tile">' +
         '<img src="' + src + '" alt="' + escapeHtml(p.caption || 'photo') + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" />' +
         '<div class="photo-fallback">Photo added ✓</div>' +
-        (p.caption ? '<div class="photo-caption">' + escapeHtml(p.caption) + '</div>' : '') +
+        '<div class="photo-caption" id="pc-' + p.id + '">' + (p.caption ? '<span class="pc-text">' + escapeHtml(p.caption) + '</span>' : '<span class="pc-text" style="color:#9a8b78;font-style:italic;">No name yet</span>') + ' <button type="button" class="pc-edit" data-id="' + p.id + '" style="background:none;border:none;color:#8b5a2b;cursor:pointer;font-size:13px;text-decoration:underline;padding:0;">' + (p.caption ? 'Edit name' : 'Add name + date') + '</button></div>' +
         '<button class="photo-remove" data-photo-id="' + p.id + '">Remove</button>' +
       '</div>';
     });
@@ -284,7 +316,7 @@ function renderRecordingPage(data) {
   }
   html += '<div class="upload-zone">' +
     '<p style="font-size:17px;color:#5a4a3a;">Add a photograph to go with your story.</p>' +
-    '<input type="text" id="photo-caption" placeholder="Who or what is this? (optional)" style="width:100%;max-width:460px;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:6px;" />' +
+    '<input type="text" id="photo-caption" placeholder="Name and date, e.g. Mom and Dad, Christmas 1975 (optional)" style="width:100%;max-width:460px;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:6px;" />' +
     '<input type="file" id="photo-file" accept="image/*" style="display:none;" />' +
     '<button class="btn btn-large" id="photo-btn" style="margin:14px auto 0;">📷 Add a photo</button>' +
     '<p id="photo-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
@@ -449,6 +481,7 @@ function renderError(msg) {
     bindRevisionHandler();
       bindPhotoDrop();
     bindRecordingTitles();
+    bindPhotoCaptions();
   } catch (e) {
     console.error('yourstory load error:', e);
     document.getElementById('main').innerHTML = renderError(e.message || 'Network error.');
