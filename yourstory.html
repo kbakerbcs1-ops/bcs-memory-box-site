@@ -507,6 +507,10 @@ function bindDoneHandler(currentStatus) {
   if (!doneBtn) return;
 
   doneBtn.addEventListener('click', async function() {
+    if (window.__bcsRecording) {
+      alert('You’re still recording — please press the Stop button first so your recording saves, then tap “I’m done.”');
+      return;
+    }
     var token = getToken();
     if (!token) return;
     doneBtn.disabled = true;
@@ -629,6 +633,12 @@ function bindRecordHandler() {
   var stream = null;
   var timerInterval = null;
   var seconds = 0;
+  var isUploading = false;
+
+  // Safety net: warn before leaving while recording or saving.
+  window.addEventListener('beforeunload', function(e){
+    if (window.__bcsRecording || isUploading) { e.preventDefault(); e.returnValue = ''; return ''; }
+  });
 
   function fmtTime(s) {
     var m = Math.floor(s / 60), sec = s % 60;
@@ -677,14 +687,17 @@ function bindRecordHandler() {
         mediaRecorder = __recMime ? new MediaRecorder(stream, { mimeType: __recMime }) : new MediaRecorder(stream);
       mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
       mediaRecorder.onstop = function() {
+        window.__bcsRecording = false;
         audioBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
         previewEl.src = URL.createObjectURL(audioBlob);
         previewEl.style.display = 'block';
-        actionsEl.style.display = 'block';
+        actionsEl.style.display = 'none';
         recBtn.style.display = 'none';
         if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+        doSave(); // AUTO-SAVE the instant they press Stop — no button to forget
       };
       mediaRecorder.start();
+      window.__bcsRecording = true;
       statusEl.textContent = '';
       seconds = 0;
       timerEl.style.display = 'block';
@@ -708,7 +721,7 @@ function bindRecordHandler() {
     resetToStart();
   });
 
-  saveBtn.addEventListener('click', async function() {
+  async function doSave() {
     if (!audioBlob) return;
     var token = getToken();
     if (!token) {
@@ -716,10 +729,11 @@ function bindRecordHandler() {
       statusEl.style.color = '#c0392b';
       return;
     }
-    saveBtn.disabled = true;
-    redoBtn.disabled = true;
-    saveBtn.textContent = 'Saving… (' + formatSize(audioBlob.size) + ')';
-    statusEl.textContent = 'Sending to secure storage…';
+    isUploading = true;
+    actionsEl.style.display = 'none';
+    recBtn.style.display = 'none';
+    timerEl.style.display = 'none';
+    statusEl.innerHTML = '<strong>Saving your recording — please don’t close this page…</strong>';
     statusEl.style.color = '#5a4a3a';
 
     var mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
@@ -729,24 +743,25 @@ function bindRecordHandler() {
     fd.append('audio', audioBlob, fname);
 
     try {
-      var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token), {
-        method: 'POST',
-        body: fd,
-      });
+      var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token), { method: 'POST', body: fd });
       var data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || ('Save failed (status ' + resp.status + ')'));
+      isUploading = false;
       statusEl.innerHTML = SAVED_SAFE_HTML;
       statusEl.style.color = '#2a5a2a';
-      setTimeout(function(){ window.location.reload(); }, 4500);
+      setTimeout(function(){ window.location.reload(); }, 4000);
     } catch (err) {
       console.error('Record save error:', err);
-      statusEl.textContent = 'Save failed: ' + (err.message || 'Unknown error');
-      statusEl.style.color = '#c0392b';
+      isUploading = false;
+      statusEl.innerHTML = '<strong style="color:#c0392b;">Your recording didn’t save yet — but it’s still here.</strong> Please tap the button below to try again.';
+      actionsEl.style.display = 'block';
+      saveBtn.style.display = '';
       saveBtn.disabled = false;
-      redoBtn.disabled = false;
-      saveBtn.textContent = 'Save this recording';
+      saveBtn.textContent = 'Try saving again';
+      redoBtn.style.display = 'none';
     }
-  });
+  }
+  saveBtn.addEventListener('click', doSave);
 }
 
 // Wire the photo picker + upload POST. Mirrors the audio uploader, posting to
