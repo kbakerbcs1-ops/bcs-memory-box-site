@@ -443,7 +443,7 @@ router.post('/reopen-recording', async (req, res) => {
 
     // Reopen only from a finished state. From other states this is a safe no-op,
     // so we never interrupt an in-flight processing run or an unpaid account.
-    if (customer.status === 'delivered' || customer.status === 'draft_ready') {
+    if (customer.status === 'delivered' || customer.status === 'draft_ready' || customer.status === 'revision_requested') {
       await db.query("UPDATE customers SET status = 'recording' WHERE id = $1", [customer.id]);
       return res.json({ ok: true, reopened: true, message: 'You can add more to your story now.' });
     }
