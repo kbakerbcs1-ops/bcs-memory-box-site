@@ -350,7 +350,7 @@ function renderDraftReady(customer, photoCount) {
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoNote = (photoCount > 0)
-    ? '<p style="background:#f4efe2;border:1px solid #e8dfc9;border-radius:6px;padding:14px 16px;margin-top:16px;line-height:1.5;">\uD83D\uDCF7 <strong>Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' safely saved</strong>, with the names you gave them. This draft is the written text of your story \u2014 your photographs are placed into your finished memoir and hardcover book by Ken, so they will not appear in this text file.</p>'
+    ? '<p style="background:#f4efe2;border:1px solid #e8dfc9;border-radius:6px;padding:14px 16px;margin-top:16px;line-height:1.5;">\uD83D\uDCF7 <strong>Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' included in your memoir</strong>, placed right alongside the stories they belong to, with the names you gave them. If you would also like a printed hardcover copy, you can order one anytime \u2014 just reach out to Ken.</p>'
     : '';
   return renderStatusBar(customer.status) +
     '<div class="card">' +
@@ -377,7 +377,7 @@ function renderDelivered(customer, photoCount) {
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoLine = (photoCount > 0)
-    ? 'Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' saved and placed into your finished memoir and hardcover book. Would you like a hardcover copy, or to add more to your story? Just reach out to Ken.'
+    ? 'Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' included in your memoir, placed alongside the stories they belong to. Would you like a printed hardcover copy, or to add more to your story? Just reach out to Ken.'
     : 'If you would like to add photographs or order a hardcover book later, just reach out to Ken.';
   return renderStatusBar(customer.status) +
     '<div class="card">' +

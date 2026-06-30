@@ -21,8 +21,9 @@ const db = require('./db');
 const storage = require('./storage');
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType,
-  HeadingLevel, LevelFormat, PageOrientation,
+  HeadingLevel, LevelFormat, PageOrientation, ImageRun,
 } = require('docx');
+const { imageSize } = require('image-size');
 
 // ----------------------------------------------------------------------------
 // The memoir-cleanup system prompt sent to Claude.
@@ -128,11 +129,30 @@ async function runCleanupPipeline(customerId) {
       '[RECORDING ' + (i + 1) + ' — ' + (r.original_filename || 'untitled') + ']\n' +
       (r.transcript || '(no transcript)')
     ).join('\n\n');
-    const memoirMarkdown = await polishWithClaude(customer.name, combined);
+    // Gather the customer's photographs (metadata + bytes) so they can be
+    // placed inside the memoir alongside the stories they belong to.
+    const { rows: photoRows } = await db.query(
+      `SELECT id, storage_key, caption, content_type, original_filename
+       FROM photos WHERE customer_id = $1 ORDER BY created_at ASC`,
+      [customerId]
+    );
+    const photos = [];
+    for (const ph of photoRows) {
+      try {
+        ph.buffer = await storage.getObjectBuffer(ph.storage_key);
+      } catch (e) {
+        ph.buffer = null;
+        console.error('[cleanup] could not load photo ' + ph.id + ': ' + e.message);
+      }
+      photos.push(ph);
+    }
+    console.log('[cleanup] Loaded ' + photos.length + ' photo(s) for placement');
 
-    // 4. Render to .docx
+    const memoirMarkdown = await polishWithClaude(customer.name, combined, photos);
+
+    // 4. Render to .docx (with photos placed inline)
     console.log('[cleanup] Rendering .docx');
-    const docxBuffer = await renderMemoirDocx(memoirMarkdown);
+    const docxBuffer = await renderMemoirDocx(memoirMarkdown, photos);
 
     // 5. Upload .docx to R2
     const docxKey = 'customers/' + customer.id + '/drafts/v1-' + Date.now() + '.docx';
@@ -221,11 +241,24 @@ async function transcribeFromR2(storageKey) {
 // ----------------------------------------------------------------------------
 // Send the combined transcripts to Claude, receive memoir Markdown.
 // ----------------------------------------------------------------------------
-async function polishWithClaude(customerName, combinedTranscripts) {
+async function polishWithClaude(customerName, combinedTranscripts, photos) {
+  photos = photos || [];
+  let photoBlock = '';
+  if (photos.length) {
+    photoBlock =
+      "\n\n----\n\nThe storyteller also uploaded " + photos.length + " photograph(s), listed below by number with the caption they wrote. As you write the memoir, place each photo next to the part of the story it best fits by inserting a marker ON ITS OWN LINE in EXACTLY this form: [[PHOTO:N]] (for example [[PHOTO:3]]).\n" +
+      "Rules for photo markers:\n" +
+      "- Use each photo number AT MOST ONCE, and only numbers that appear in the list.\n" +
+      "- Put the marker on its own line, between paragraphs, right after the sentence or story it relates to.\n" +
+      "- Match using the caption (names, dates, relationships). If a photo has no clear home in the text, simply leave it out \u2014 leftover photos are added to a Photographs section automatically.\n" +
+      "- Do NOT describe or mention the photo in the prose; only insert the marker line.\n\n" +
+      "PHOTOS:\n" +
+      photos.map(function (p, i) { return "Photo " + (i + 1) + ": " + (p.caption || '(no caption)'); }).join('\n');
+  }
   const userMsg =
     "Storyteller's name: " + customerName + "\n\n" +
     "Here are the transcripts of their recordings. Organize and polish them into the memoir per the rules above:\n\n" +
-    combinedTranscripts;
+    combinedTranscripts + photoBlock;
 
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -259,7 +292,58 @@ async function polishWithClaude(customerName, combinedTranscripts) {
 // We parse line-by-line (no nested markdown beyond what we asked for) and emit
 // docx paragraphs accordingly.
 // ----------------------------------------------------------------------------
-async function renderMemoirDocx(markdown) {
+// Map an uploaded photo to a docx-supported image type, or null if unsupported.
+function docxImageType(p) {
+  const TYPE_MAP = { jpg: 'jpg', jpeg: 'jpg', png: 'png', gif: 'gif', bmp: 'bmp' };
+  const ext = ((p.original_filename || '').split('.').pop() || '').toLowerCase();
+  const ct = ((p.content_type || '').split('/').pop() || '').toLowerCase();
+  return TYPE_MAP[ext] || TYPE_MAP[ct] || null;
+}
+
+// Produce the docx paragraphs for one photo: the image (scaled to fit) plus its
+// caption. Unsupported formats (e.g. HEIC) degrade to a small note + caption so
+// nothing is ever silently dropped.
+function photoParagraphs(p) {
+  const out = [];
+  const type = docxImageType(p);
+  const MAXW = 384; // ~4 inches wide inline
+  if (type && p.buffer) {
+    let w = MAXW, h = MAXW;
+    try {
+      const dim = imageSize(p.buffer);
+      if (dim && dim.width && dim.height) {
+        const scale = Math.min(MAXW / dim.width, 1);
+        w = Math.round(dim.width * scale);
+        h = Math.round(dim.height * scale);
+      }
+    } catch (e) { /* fall back to square */ }
+    out.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 160, after: 40 },
+      children: [new ImageRun({ data: p.buffer, type: type, transformation: { width: w, height: h } })],
+    }));
+  } else {
+    out.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 160, after: 40 },
+      children: [new TextRun({ text: '[ Photograph ]', italics: true, size: 22, color: '8B5A2B' })],
+    }));
+  }
+  if (p.caption) {
+    out.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 200 },
+      children: [new TextRun({ text: p.caption, italics: true, size: 22, color: '5A4A3A' })],
+    }));
+  }
+  return out;
+}
+
+async function renderMemoirDocx(markdown, photos) {
+  photos = photos || [];
+  const byIdx = {};
+  photos.forEach(function (p, i) { byIdx[i + 1] = p; });
+  const placed = new Set();
   const lines = markdown.split('\n');
   const children = [];
 
@@ -268,6 +352,13 @@ async function renderMemoirDocx(markdown) {
 
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, '');
+    const photoMarker = line.match(/^\[\[PHOTO:(\d+)\]\]$/);
+    if (photoMarker) {
+      const idx = parseInt(photoMarker[1], 10);
+      const p = byIdx[idx];
+      if (p && !placed.has(idx)) { placed.add(idx); photoParagraphs(p).forEach(function (x) { children.push(x); }); }
+      continue;
+    }
     if (!line) continue;
 
     if (line.startsWith('# ')) {
@@ -297,6 +388,18 @@ async function renderMemoirDocx(markdown) {
         })],
       }));
     }
+  }
+
+  // Any photos the model didn't place go into a Photographs section at the end,
+  // so a customer's picture is never lost.
+  const leftover = photos.filter(function (p, i) { return !placed.has(i + 1); });
+  if (leftover.length) {
+    children.push(new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 480, after: 180 },
+      children: [new TextRun({ text: 'Photographs', bold: true, size: 32, color: '8B5A2B' })],
+    }));
+    leftover.forEach(function (p) { photoParagraphs(p).forEach(function (x) { children.push(x); }); });
   }
 
   const doc = new Document({
