@@ -73,6 +73,10 @@ const MEMOIR_SYSTEM_PROMPT = [
 "If a section has no content because the storyteller didn't talk about that topic, write a single short italic note like:",
 "*The storyteller did not record about this period of their life.*",
 "",
+"PHOTOGRAPHS (when a photo list is provided in the user\u2019s message):",
+"The user may give you a numbered list of the storyteller\u2019s photographs, each with a caption. Place them INTO the story: wherever a passage clearly matches a photo\u2019s caption (the same people, event, place, or time), insert a line containing ONLY the marker [[PHOTO:N]] on its own line, between paragraphs, right after that passage. These marker lines ARE a required and allowed part of the output structure \u2014 include them even though the rest is prose.",
+"Photo rules: use each photo number at most once; use only numbers that appear in the list; match by caption (names, dates, relationships); place as many as fit naturally throughout all four sections; if a photo has no clear home in the text, simply leave it out (leftover photos are collected into a Photographs section automatically). Never describe or mention the photo in the prose \u2014 output only the bare [[PHOTO:N]] marker line.",
+"",
 "Begin the memoir IMMEDIATELY. No preamble. No explanation of your process. No notes at the end. Just the memoir.",
 ].join("\n");
 
