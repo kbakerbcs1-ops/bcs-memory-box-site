@@ -11,6 +11,18 @@ const multer = require('multer');
 const db = require('../lib/db');
 const storage = require('../lib/storage');
 
+// Detect HEIC/HEIF (iPhone) images by extension, mime, or the ftyp brand magic.
+function isHeic(buffer, name, mime) {
+  const n = (name || '').toLowerCase(), m = (mime || '').toLowerCase();
+  if (n.endsWith('.heic') || n.endsWith('.heif')) return true;
+  if (m.includes('heic') || m.includes('heif')) return true;
+  if (buffer && buffer.length > 12 && buffer.toString('ascii', 4, 8) === 'ftyp') {
+    const brand = buffer.toString('ascii', 8, 12).toLowerCase();
+    if (['heic','heix','hevc','heim','heis','hevm','hevs','mif1','msf1'].includes(brand)) return true;
+  }
+  return false;
+}
+
 const router = express.Router();
 
 // Keep the file in memory, cap 25 MB per photo (comfortably covers a
@@ -39,15 +51,32 @@ router.post('/', upload.single('photo'), async (req, res) => {
     const photo = req.file;
     if (!photo) return res.status(400).json({ error: 'No photo uploaded.' });
 
-    // Derive a safe extension from the filename, or fall back to mime type.
-    const ext = ((photo.originalname || '').split('.').pop() ||
-                 (photo.mimetype || '').split('/').pop() ||
+    // iPhone photos arrive as HEIC, which browsers (and Word documents) can't
+    // display. Convert to JPEG on the way in so the photo shows everywhere and
+    // embeds into the memoir.
+    let photoBuffer = photo.buffer;
+    let photoMime = photo.mimetype || '';
+    let photoName = photo.originalname || 'photo';
+    if (isHeic(photoBuffer, photoName, photoMime)) {
+      try {
+        const heicConvert = require('heic-convert');
+        photoBuffer = Buffer.from(await heicConvert({ buffer: photoBuffer, format: 'JPEG', quality: 0.9 }));
+        photoMime = 'image/jpeg';
+        photoName = photoName.replace(/\.(heic|heif)$/i, '') + '.jpg';
+      } catch (e) {
+        console.error('[photo upload] HEIC conversion failed, storing original: ' + e.message);
+      }
+    }
+
+    // Derive a safe extension from the (possibly converted) filename or mime type.
+    const ext = ((photoName || '').split('.').pop() ||
+                 (photoMime || '').split('/').pop() ||
                  'jpg').toLowerCase();
     const safeExt = ext.replace(/[^a-z0-9]/g, '').slice(0, 8) || 'jpg';
     const storageKey = `customers/${customer.id}/photos/${Date.now()}-${db.randomToken(8)}.${safeExt}`;
 
     // Push the bytes to R2
-    await storage.uploadObject(storageKey, photo.buffer, photo.mimetype);
+    await storage.uploadObject(storageKey, photoBuffer, photoMime);
 
     // Optional caption (trim + cap length)
     const caption = (req.body.caption || '').trim().slice(0, 500) || null;
@@ -56,7 +85,7 @@ router.post('/', upload.single('photo'), async (req, res) => {
       `INSERT INTO photos (customer_id, storage_key, original_filename, size_bytes, content_type, caption)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, original_filename, size_bytes, caption, created_at`,
-      [customer.id, storageKey, photo.originalname || 'photo', photo.size, photo.mimetype || null, caption]
+      [customer.id, storageKey, photoName, photoBuffer.length, photoMime || null, caption]
     );
 
     res.json({ ok: true, photo: saved });

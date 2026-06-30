@@ -144,6 +144,17 @@ async function runCleanupPipeline(customerId) {
     for (const ph of photoRows) {
       try {
         ph.buffer = await storage.getObjectBuffer(ph.storage_key);
+        // Legacy HEIC already in storage: convert to JPEG so it embeds.
+        if (ph.buffer && isHeic(ph.buffer, ph.original_filename, ph.content_type)) {
+          try {
+            const heicConvert = require('heic-convert');
+            ph.buffer = Buffer.from(await heicConvert({ buffer: ph.buffer, format: 'JPEG', quality: 0.9 }));
+            ph.content_type = 'image/jpeg';
+            ph.original_filename = (ph.original_filename || 'photo').replace(/\.(heic|heif)$/i, '') + '.jpg';
+          } catch (e) {
+            console.error('[cleanup] HEIC conversion failed for ' + ph.id + ': ' + e.message);
+          }
+        }
       } catch (e) {
         ph.buffer = null;
         console.error('[cleanup] could not load photo ' + ph.id + ': ' + e.message);
@@ -296,6 +307,18 @@ async function polishWithClaude(customerName, combinedTranscripts, photos) {
 // We parse line-by-line (no nested markdown beyond what we asked for) and emit
 // docx paragraphs accordingly.
 // ----------------------------------------------------------------------------
+// Detect HEIC/HEIF by extension, mime, or ftyp brand magic.
+function isHeic(buffer, name, mime) {
+  const n = (name || '').toLowerCase(), m = (mime || '').toLowerCase();
+  if (n.endsWith('.heic') || n.endsWith('.heif')) return true;
+  if (m.includes('heic') || m.includes('heif')) return true;
+  if (buffer && buffer.length > 12 && buffer.toString('ascii', 4, 8) === 'ftyp') {
+    const brand = buffer.toString('ascii', 8, 12).toLowerCase();
+    if (['heic','heix','hevc','heim','heis','hevm','hevs','mif1','msf1'].includes(brand)) return true;
+  }
+  return false;
+}
+
 // Map an uploaded photo to a docx-supported image type, or null if unsupported.
 function docxImageType(p) {
   const TYPE_MAP = { jpg: 'jpg', jpeg: 'jpg', png: 'png', gif: 'gif', bmp: 'bmp' };

@@ -22,6 +22,37 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB cap for the 90-second trial (blocks oversized/abusive uploads)
 });
 
+// ----------------------------------------------------------------------------
+// Simple in-memory per-IP rate limiter. Single Render instance, so a Map is
+// enough. Protects the unauthenticated, cost-incurring endpoints from abuse.
+// ----------------------------------------------------------------------------
+function makeRateLimiter({ windowMs, max, message }) {
+  const hits = new Map(); // ip -> [timestamps]
+  return (req, res, next) => {
+    const ip = ((req.headers['x-forwarded-for'] || '').split(',')[0].trim()) ||
+               req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const recent = (hits.get(ip) || []).filter((t) => now - t < windowMs);
+    if (recent.length >= max) {
+      return res.status(429).json({ error: message });
+    }
+    recent.push(now);
+    hits.set(ip, recent);
+    if (hits.size > 5000) { // occasional cleanup
+      for (const [k, v] of hits) { if (!v.some((t) => now - t < windowMs)) hits.delete(k); }
+    }
+    next();
+  };
+}
+const trialLimiter = makeRateLimiter({
+  windowMs: 60 * 60 * 1000, max: 5,
+  message: "You've reached the free-sample limit for now. Please try again in an hour, or sign up to record your full story.",
+});
+const linkLimiter = makeRateLimiter({
+  windowMs: 60 * 60 * 1000, max: 12,
+  message: 'Too many requests right now. Please wait a few minutes and try again.',
+});
+
 const PORT = process.env.PORT || 3000;
 const ALLOWED_ORIGINS = new Set([
   'https://www.bcsmemorybox.com',
@@ -66,6 +97,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 // ============================================================================
 // Customer portal API
 // ============================================================================
+app.use('/api/customer/request-link', linkLimiter);
 app.use('/api/customer', customerRoutes);
 app.use('/api/customer', checkoutRouter);          // POST /api/customer/create-checkout-session
 app.use('/api/customer/upload', uploadRoutes);
@@ -79,7 +111,7 @@ app.use('/api/customer/finish-recording', finishRoutes);
 // /trial — original free-trial endpoint (unchanged, still serves the homepage
 // recording widget for visitors who want to hear a 90-second sample).
 // ============================================================================
-app.post('/trial', upload.single('audio'), async (req, res) => {
+app.post('/trial', trialLimiter, upload.single('audio'), async (req, res) => {
   try {
     const audio = req.file;
     const email = (req.body.email || '').trim();
@@ -88,6 +120,20 @@ app.post('/trial', upload.single('audio'), async (req, res) => {
     if (!audio) return res.status(400).json({ error: 'Missing audio file' });
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       return res.status(400).json({ error: 'Missing or invalid email' });
+    }
+
+    // True duration cap: reject anything over ~90s BEFORE paying for
+    // transcription or AI polish. Fail-open if the format can't be parsed
+    // (the 8 MB size cap and per-IP rate limit still bound the cost).
+    try {
+      const mm = require('music-metadata');
+      const meta = await mm.parseBuffer(audio.buffer, audio.mimetype || undefined);
+      const dur = meta && meta.format && meta.format.duration;
+      if (dur && dur > 100) {
+        return res.status(400).json({ error: 'The free sample is limited to 90 seconds. Please record a shorter clip.' });
+      }
+    } catch (e) {
+      console.error('[trial] duration check skipped: ' + e.message);
     }
 
     // 1. Upload audio to AssemblyAI
