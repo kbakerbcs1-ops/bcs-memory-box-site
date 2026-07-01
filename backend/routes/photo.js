@@ -23,6 +23,23 @@ function isHeic(buffer, name, mime) {
   return false;
 }
 
+// Physically apply a JPEG's EXIF orientation so portrait photos are stored upright.
+async function autoOrient(buffer, contentType, filename) {
+  const isJpeg = /jpe?g/i.test(contentType || '') || /\.jpe?g$/i.test(filename || '') ||
+                 (buffer && buffer.length > 2 && buffer[0] === 0xFF && buffer[1] === 0xD8);
+  if (!isJpeg) return buffer;
+  try {
+    const sharp = require('sharp');
+    const meta = await sharp(buffer).metadata();
+    if (meta.orientation && meta.orientation > 1) {
+      return await sharp(buffer).rotate().jpeg({ quality: 90 }).toBuffer();
+    }
+  } catch (e) {
+    console.error('[photo upload] auto-orient skipped: ' + e.message);
+  }
+  return buffer;
+}
+
 const router = express.Router();
 
 // Keep the file in memory, cap 25 MB per photo (comfortably covers a
@@ -67,6 +84,9 @@ router.post('/', upload.single('photo'), async (req, res) => {
         console.error('[photo upload] HEIC conversion failed, storing original: ' + e.message);
       }
     }
+
+    // Bake in EXIF orientation so portrait photos are stored (and shown) upright.
+    photoBuffer = await autoOrient(photoBuffer, photoMime, photoName);
 
     // Derive a safe extension from the (possibly converted) filename or mime type.
     const ext = ((photoName || '').split('.').pop() ||

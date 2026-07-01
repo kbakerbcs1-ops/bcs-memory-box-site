@@ -155,6 +155,8 @@ async function runCleanupPipeline(customerId) {
             console.error('[cleanup] HEIC conversion failed for ' + ph.id + ': ' + e.message);
           }
         }
+        // Bake in EXIF orientation so portrait photos aren't embedded sideways.
+        if (ph.buffer) ph.buffer = await autoOrient(ph.buffer, ph.content_type, ph.original_filename);
       } catch (e) {
         ph.buffer = null;
         console.error('[cleanup] could not load photo ' + ph.id + ': ' + e.message);
@@ -317,6 +319,25 @@ function isHeic(buffer, name, mime) {
     if (['heic','heix','hevc','heim','heis','hevm','hevs','mif1','msf1'].includes(brand)) return true;
   }
   return false;
+}
+
+// Physically apply a JPEG's EXIF orientation (bake the rotation into the pixels)
+// so portrait phone photos are not embedded sideways. No-op for non-JPEG or
+// already-upright images.
+async function autoOrient(buffer, contentType, filename) {
+  const isJpeg = /jpe?g/i.test(contentType || '') || /\.jpe?g$/i.test(filename || '') ||
+                 (buffer && buffer.length > 2 && buffer[0] === 0xFF && buffer[1] === 0xD8);
+  if (!isJpeg) return buffer;
+  try {
+    const sharp = require('sharp');
+    const meta = await sharp(buffer).metadata();
+    if (meta.orientation && meta.orientation > 1) {
+      return await sharp(buffer).rotate().jpeg({ quality: 90 }).toBuffer();
+    }
+  } catch (e) {
+    console.error('[cleanup] auto-orient skipped: ' + e.message);
+  }
+  return buffer;
 }
 
 // Map an uploaded photo to a docx-supported image type, or null if unsupported.
