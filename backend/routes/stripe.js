@@ -60,6 +60,11 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
+      // Show the "Add promotion code" box so beta testers / gifts / launch
+      // discounts can use a Stripe coupon (e.g. a 100%-off code = free) and go
+      // through the SAME signup->checkout->record flow as a paying customer.
+      // Only codes created in the Stripe dashboard work; a made-up code does nothing.
+      allow_promotion_codes: true,
       customer_email: customer.email,
       client_reference_id: customer.access_token,
       line_items: [
