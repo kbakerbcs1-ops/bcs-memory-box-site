@@ -180,7 +180,7 @@ router.get('/download', async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[customer/download] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });
 
@@ -210,7 +210,7 @@ router.get('/photo/:id', async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[customer/photo] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });
 
@@ -239,7 +239,7 @@ router.delete('/photo/:id', async (req, res) => {
     res.json({ ok: true, deleted: true });
   } catch (err) {
     console.error('[customer/photo delete] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });
 
@@ -345,7 +345,7 @@ escapeHtml(feedback) +
     res.json({ ok: true, message: 'Your revision request has been sent. Ken will work on it soon.' });
   } catch (err) {
     console.error('[customer/request-revision] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });
 
@@ -520,7 +520,7 @@ router.post('/reopen-recording', async (req, res) => {
     return res.json({ ok: true, reopened: false, message: 'You can add to your story now.' });
   } catch (err) {
     console.error('[customer/reopen-recording] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });
 
@@ -559,6 +559,6 @@ router.get('/recording-audio', async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[customer/recording-audio] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });

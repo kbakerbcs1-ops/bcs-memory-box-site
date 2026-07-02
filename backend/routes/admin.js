@@ -60,7 +60,7 @@ router.post('/login', async (req, res) => {
     res.json({ ok: true, sessionToken, expiresAt });
   } catch (err) {
     console.error('[admin/login] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -75,7 +75,7 @@ router.post('/logout', async (req, res) => {
     }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -102,7 +102,7 @@ router.get('/customers', requireAdmin, async (req, res) => {
     res.json({ ok: true, customers: rows });
   } catch (err) {
     console.error('[admin/customers] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -150,7 +150,7 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, customer, recordings, drafts, photos });
   } catch (err) {
     console.error('[admin/customer/:id] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -206,7 +206,7 @@ router.delete('/customer/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, deleted: true, email: customer.email, filesDeleted });
   } catch (err) {
     console.error('[admin/customer/delete] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -230,7 +230,7 @@ router.get('/recording/:id/download', requireAdmin, async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[admin/recording/download] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -253,7 +253,7 @@ router.get('/photo/:id/view', requireAdmin, async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error('[admin/photo/view] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -275,7 +275,7 @@ router.get('/draft/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, draft });
   } catch (err) {
     console.error('[admin/draft/get] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -296,7 +296,7 @@ router.put('/draft/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, savedAt: new Date().toISOString() });
   } catch (err) {
     console.error('[admin/draft/put] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -362,7 +362,7 @@ router.post('/draft/:id/approve', requireAdmin, async (req, res) => {
     res.json({ ok: true, delivered: true });
   } catch (err) {
     console.error('[admin/draft/approve] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 
@@ -418,7 +418,7 @@ router.post('/comp-customer', requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('[admin/comp-customer] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
 

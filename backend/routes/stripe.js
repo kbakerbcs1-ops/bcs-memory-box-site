@@ -86,7 +86,7 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
     res.json({ ok: true, checkoutUrl: session.url });
   } catch (err) {
     console.error('[stripe/create-checkout-session] error:', err);
-    res.status(500).json({ error: err.message || 'Could not create checkout session.' });
+    res.status(500).json({ error: 'Could not start checkout. Please try again.' });
   }
 });
 

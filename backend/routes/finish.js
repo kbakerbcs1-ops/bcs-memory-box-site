@@ -53,7 +53,7 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[finish] error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
   }
 });
 

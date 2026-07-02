@@ -113,7 +113,6 @@ router.post('/', upload.single('photo'), async (req, res) => {
     console.error('[photo upload] error:', err);
     res.status(500).json({
       error: 'Photo upload failed. Please try again or email Ken if it keeps happening.',
-      detail: err.message,
     });
   }
 });

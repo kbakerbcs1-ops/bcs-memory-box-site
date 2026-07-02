@@ -15,6 +15,7 @@ const photoRoutes    = require('./routes/photo');
 const adminRoutes    = require('./routes/admin');
 const finishRoutes   = require('./routes/finish');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
+const { checkStuckCustomers } = require('./lib/cleanup');
 
 const app = express();
 const upload = multer({
@@ -284,5 +285,12 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     console.log('BCS Memory Box portal server listening on port ' + PORT);
     console.log('  db: ' + (db.enabled ? 'connected' : 'NOT CONFIGURED (DATABASE_URL missing)'));
     console.log('  stripe: ' + (process.env.STRIPE_SECRET_KEY ? 'configured' : 'NOT CONFIGURED'));
+
+    // Safety net: shortly after boot (catches anything stranded by this restart)
+    // and every 10 minutes, flag any customer stuck in 'processing' and email Ken.
+    setTimeout(function () { checkStuckCustomers().catch(function () {}); }, 60 * 1000);
+    setInterval(function () {
+      checkStuckCustomers().catch(function (e) { console.error('[reaper] tick failed:', e.message); });
+    }, 10 * 60 * 1000);
   });
 })();

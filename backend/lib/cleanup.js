@@ -524,8 +524,60 @@ function escapeHtml(s) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// ----------------------------------------------------------------------------
+// Safety net ("reaper"): detect customers stuck in 'processing' — a pipeline
+// that died silently (e.g. the server restarted mid-run) — and email Ken so no
+// paying customer is ever left waiting with no draft and no error. The
+// customers.updated_at trigger records when 'processing' began, so "processing
+// for too long" is easy to spot. Alerts once per customer per process lifetime
+// (it re-checks after a restart, which is exactly when jobs die). Ken retries
+// from the admin dashboard. Threshold is generous so a legit long batch of
+// recordings doesn't cry wolf.
+// ----------------------------------------------------------------------------
+const STUCK_MINUTES = 60;
+const _alertedStuck = new Set();
+
+async function emailAdminStuck(customer) {
+  const subject = 'Memory Box: a memoir may be STUCK for ' + (customer && customer.name || 'a customer');
+  const adminLink = 'https://www.bcsmemorybox.com/admin.html';
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#c0392b;">A memoir has been processing too long</h2>' +
+'<p><strong>' + escapeHtml((customer && customer.name) || 'A customer') + '</strong> (' + escapeHtml((customer && customer.email) || '') + ') has been in <code>processing</code> for over ' + STUCK_MINUTES + ' minutes.</p>' +
+'<p>It may be stuck (for example, the server restarted mid-run) &mdash; or it could just be a very large batch of recordings still finishing. Please open the admin dashboard to check, and if it is stuck, retry it from there.</p>' +
+'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'</div>';
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
+async function checkStuckCustomers() {
+  if (!db.enabled) return;
+  let result;
+  try {
+    result = await db.query(
+      "SELECT id, name, email, updated_at FROM customers " +
+      "WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '" + STUCK_MINUTES + " minutes'"
+    );
+  } catch (err) {
+    console.error('[reaper] could not query stuck customers:', err.message);
+    return;
+  }
+  for (const c of result.rows) {
+    if (_alertedStuck.has(c.id)) continue;
+    _alertedStuck.add(c.id);
+    console.warn('[reaper] customer stuck in processing: ' + c.id + ' (' + (c.name || '') + ')');
+    try {
+      await emailAdminStuck(c);
+    } catch (e) {
+      console.error('[reaper] could not email Ken about stuck customer:', e.message);
+      _alertedStuck.delete(c.id); // allow a retry on the next tick
+    }
+  }
+}
+
 module.exports = {
   runCleanupPipeline,
+  checkStuckCustomers,
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data

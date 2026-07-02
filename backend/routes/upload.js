@@ -60,7 +60,6 @@ router.post('/', upload.single('audio'), async (req, res) => {
     console.error('[upload] error:', err);
     res.status(500).json({
       error: 'Upload failed. Please try again or email Ken if it keeps happening.',
-      detail: err.message,
     });
   }
 });
