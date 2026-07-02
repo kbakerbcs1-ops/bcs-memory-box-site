@@ -969,30 +969,51 @@ async function reopenStory(btn) {
   }
 }
 
-// Let a customer drag a photo straight onto the photo box (easy on a Mac:
-// drag from the Photos app). Reuses the existing #photo-file upload handler.
+// Let a customer drag a photo straight onto the page (easy on a Mac: drag from
+// the Photos app). The WHOLE page is a drop target — the customer can let go
+// anywhere, so they don't have to aim for the small box even when their Photos
+// window is covering most of the browser. Reuses the #photo-file upload handler.
 function bindPhotoDrop() {
   var fileInput = document.getElementById('photo-file');
   if (!fileInput) return;
   var zone = fileInput.closest('.upload-zone') || fileInput.closest('.card') || fileInput.parentElement;
   if (!zone) return;
+
   if (!document.getElementById('photo-drop-hint')) {
     var hint = document.createElement('p');
     hint.id = 'photo-drop-hint';
     hint.style.cssText = 'margin-top:10px;font-size:14px;color:#5a4a3a;';
-    hint.innerHTML = 'On a computer: open your <strong>Photos</strong> app and <strong>drag a picture right into this box</strong>. On a phone, just tap the button above.';
+    hint.innerHTML = 'On a computer: open your <strong>Photos</strong> app, then <strong>drag a picture anywhere onto this page</strong> and let go &mdash; you don\'t have to aim for the box. Tip: if the Photos window is covering the page, drag its edge to make it smaller (or slide it to one side) so you can see this page beside it. On a phone, just tap the button above.';
     zone.appendChild(hint);
   }
-  function stop(e) { e.preventDefault(); e.stopPropagation(); }
-  ['dragenter','dragover'].forEach(function(ev) {
-    zone.addEventListener(ev, function(e) { stop(e); zone.style.outline = '3px dashed #8b5a2b'; zone.style.outlineOffset = '4px'; });
-  });
-  ['dragleave','dragend'].forEach(function(ev) {
-    zone.addEventListener(ev, function(e) { stop(e); zone.style.outline = ''; });
-  });
-  zone.addEventListener('drop', function(e) {
-    stop(e);
-    zone.style.outline = '';
+
+  function isFileDrag(e) {
+    if (!e.dataTransfer || !e.dataTransfer.types) return false;
+    for (var i = 0; i < e.dataTransfer.types.length; i++) { if (e.dataTransfer.types[i] === 'Files') return true; }
+    return false;
+  }
+
+  // Full-window overlay so the customer can drop ANYWHERE, even if only a sliver
+  // of the browser is visible next to their Photos window.
+  var overlay = document.getElementById('photo-drop-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'photo-drop-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(139,90,43,0.16);pointer-events:none;';
+    overlay.innerHTML = '<div style="background:#fff;border:3px dashed #8b5a2b;border-radius:16px;padding:36px 48px;font-family:Georgia,serif;font-size:24px;color:#8b5a2b;text-align:center;max-width:80%;box-shadow:0 8px 40px rgba(0,0,0,0.18);">📷 Drop your photo anywhere to add it</div>';
+    document.body.appendChild(overlay);
+  }
+
+  var dragDepth = 0;
+  function showOverlay() { overlay.style.display = 'flex'; zone.style.outline = '3px dashed #8b5a2b'; zone.style.outlineOffset = '4px'; }
+  function hideOverlay() { overlay.style.display = 'none'; zone.style.outline = ''; }
+
+  window.addEventListener('dragenter', function(e) { if (!isFileDrag(e)) return; e.preventDefault(); dragDepth++; showOverlay(); });
+  window.addEventListener('dragover',  function(e) { if (!isFileDrag(e)) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
+  window.addEventListener('dragleave', function(e) { if (!isFileDrag(e)) return; dragDepth--; if (dragDepth <= 0) { dragDepth = 0; hideOverlay(); } });
+  window.addEventListener('drop', function(e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault(); dragDepth = 0; hideOverlay();
     var files = e.dataTransfer && e.dataTransfer.files;
     var st = document.getElementById('photo-status');
     if (!files || !files.length) return;
@@ -1006,6 +1027,7 @@ function bindPhotoDrop() {
       dt.items.add(file);
       fileInput.files = dt.files;
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      if (zone.scrollIntoView) zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (err) {
       if (st) { st.textContent = 'Could not read that photo. Try the Add a photo button instead.'; st.style.color = '#c0392b'; }
     }
