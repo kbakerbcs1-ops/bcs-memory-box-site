@@ -360,7 +360,7 @@ function renderDraftReady(customer, photoCount) {
       '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
       photoNote +
     '</div>' +
-    revisionRequestCard();
+    revisionRequestCard() + orderBookCard();
 }
 
 function revisionRequestCard() {
@@ -392,7 +392,8 @@ function renderDelivered(customer, photoCount) {
       '<p>Remembered something new? You can keep adding recordings anytime &mdash; Ken will fold them into an updated memoir for you.</p>' +
       '<button class="btn btn-secondary" onclick="reopenStory(this)">Add more to your story</button>' +
       '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
-    '</div>';
+    '</div>' +
+    orderBookCard();
 }
 
 function renderRevisionRequested(customer) {
@@ -487,6 +488,7 @@ function renderError(msg) {
     bindPhotoHandler();
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
+    bindOrderBook();
       bindPhotoDrop();
     bindRecordingTitles();
     bindPhotoCaptions();
@@ -886,6 +888,69 @@ function bindRevisionHandler() {
     }
   });
 }
+// Card: order a printed hardcover book (V1 — emails Ken the request).
+function orderBookCard() {
+  var istyle = 'width:100%;box-sizing:border-box;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:12px;';
+  var lstyle = 'display:block;font-size:14px;color:#5a4a3a;margin:0 0 4px;';
+  function field(id,label,ph){ return '<label style="'+lstyle+'">'+label+'</label><input type="text" id="'+id+'" placeholder="'+(ph||'')+'" style="'+istyle+'"/>'; }
+  return '<div class="card">' +
+    '<h2>Want a printed hardcover book?</h2>' +
+    '<p>Turn your memoir into a beautiful hardcover keepsake — <strong>$99</strong> for the first copy, <strong>$49</strong> for each additional. Tell us where to mail it and how many you would like, and Ken will personally confirm the details and payment with you.</p>' +
+    '<button class="btn" id="orderbook-toggle">Order a hardcover book</button>' +
+    '<div id="orderbook-form" style="display:none;margin-top:20px;text-align:left;max-width:520px;">' +
+      field('ob-name','Send the book to (full name)','e.g. Ken Baker') +
+      field('ob-addr1','Street address','e.g. 123 Main Street') +
+      field('ob-addr2','Apartment / unit (optional)','') +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
+        '<div style="flex:2;min-width:160px;">' + field('ob-city','City','') + '</div>' +
+        '<div style="flex:1;min-width:90px;">' + field('ob-state','State','') + '</div>' +
+        '<div style="flex:1;min-width:90px;">' + field('ob-zip','ZIP','') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div style="flex:2;min-width:160px;">' + field('ob-country','Country','USA') + '</div>' +
+        '<div style="flex:1;min-width:120px;"><label style="'+lstyle+'">Number of copies</label><input type="number" id="ob-copies" value="1" min="1" max="50" style="'+istyle+'"/></div>' +
+      '</div>' +
+      '<label style="'+lstyle+'">Anything else? (optional)</label><textarea id="ob-notes" rows="2" style="'+istyle+'"></textarea>' +
+      '<button class="btn btn-large" id="orderbook-submit" style="margin-top:8px;">Send my book request</button>' +
+      '<p id="orderbook-status" class="muted" style="margin-top:12px;font-size:15px;"></p>' +
+    '</div>' +
+  '</div>';
+}
+
+function bindOrderBook() {
+  var toggle = document.getElementById('orderbook-toggle');
+  if (!toggle) return;
+  var form = document.getElementById('orderbook-form');
+  var submit = document.getElementById('orderbook-submit');
+  var statusEl = document.getElementById('orderbook-status');
+  toggle.addEventListener('click', function(){
+    form.style.display = (form.style.display === 'none' || !form.style.display) ? 'block' : 'none';
+  });
+  submit.addEventListener('click', async function(){
+    var g = function(id){ var e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
+    var payload = { name:g('ob-name'), address1:g('ob-addr1'), address2:g('ob-addr2'), city:g('ob-city'), state:g('ob-state'), zip:g('ob-zip'), country:g('ob-country') || 'USA', copies:g('ob-copies') || '1', notes:g('ob-notes') };
+    if (!payload.name || !payload.address1 || !payload.city || !payload.state || !payload.zip) {
+      statusEl.style.color = '#c0392b'; statusEl.textContent = 'Please fill in your name and full shipping address.'; return;
+    }
+    submit.disabled = true; var old = submit.textContent; submit.textContent = 'Sending…';
+    statusEl.style.color = '#5a534c'; statusEl.textContent = 'Sending your request…';
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/order-book?token=' + encodeURIComponent(getToken()), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      var data = await resp.json().catch(function(){ return {}; });
+      if (resp.ok && data.ok) {
+        statusEl.style.color = '#2a5a2a'; statusEl.textContent = data.message || 'Your book request is in! Ken will be in touch.';
+        submit.style.display = 'none';
+      } else {
+        statusEl.style.color = '#c0392b'; statusEl.textContent = data.error || 'Something went wrong. Please try again.';
+        submit.disabled = false; submit.textContent = old;
+      }
+    } catch (e) {
+      statusEl.style.color = '#c0392b'; statusEl.textContent = 'Could not reach the server. Please try again.';
+      submit.disabled = false; submit.textContent = old;
+    }
+  });
+}
+
 // Lets a delivered/draft-ready customer reopen recording to add more stories.
 async function reopenStory(btn) {
   var token = getToken();

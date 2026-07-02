@@ -350,6 +350,72 @@ escapeHtml(feedback) +
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/customer/order-book?token=<access_token>
+// Body: { name, address1, address2, city, state, zip, country, copies, notes }
+// V1: emails Ken the customer's hardcover book request; Ken confirms payment
+// and places the order on Lulu (flow proven manually). No charge taken here.
+// ---------------------------------------------------------------------------
+router.post('/order-book', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+
+    const customer = await db.queryOne(
+      'SELECT id, name, email FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const b = req.body || {};
+    const clean = (v, max) => String(v == null ? '' : v).trim().slice(0, max || 200);
+    const shipName = clean(b.name, 120);
+    const address1 = clean(b.address1, 200);
+    const address2 = clean(b.address2, 120);
+    const city     = clean(b.city, 120);
+    const state    = clean(b.state, 80);
+    const zip      = clean(b.zip, 40);
+    const country  = clean(b.country, 80) || 'USA';
+    const notes    = clean(b.notes, 1000);
+    let copies = parseInt(b.copies, 10);
+    if (!(copies >= 1)) copies = 1;
+    if (copies > 50) copies = 50;
+
+    if (!shipName || !address1 || !city || !state || !zip) {
+      return res.status(400).json({ error: 'Please fill in your name and full shipping address.' });
+    }
+
+    const priceNote = copies === 1 ? '$99' : ('$99 + ' + (copies - 1) + ' x $49 = $' + (99 + (copies - 1) * 49));
+    const subject = 'Hardcover book order from ' + (customer.name || shipName);
+    const adminLink = 'https://www.bcsmemorybox.com/admin.html';
+    const rows = [
+      ['Customer', (customer.name || '') + ' (' + customer.email + ')'],
+      ['Ship to', shipName],
+      ['Address', address1 + (address2 ? ', ' + address2 : '')],
+      ['City / State / Zip', city + ', ' + state + ' ' + zip],
+      ['Country', country],
+      ['Copies', copies + '  (' + priceNote + ')'],
+    ];
+    if (notes) rows.push(['Notes', notes]);
+    const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">Hardcover book order</h2>' +
+'<p><strong>' + escapeHtml(customer.name || shipName) + '</strong> would like to order <strong>' + copies + '</strong> hardcover ' + (copies === 1 ? 'copy' : 'copies') + ' of their memoir.</p>' +
+'<table style="border-collapse:collapse;margin:16px 0;">' +
+rows.map((r) => '<tr><td style="padding:4px 14px 4px 0;color:#8b5a2b;vertical-align:top;"><strong>' + escapeHtml(r[0]) + '</strong></td><td style="padding:4px 0;">' + escapeHtml(r[1]) + '</td></tr>').join('') +
+'</table>' +
+'<p style="color:#5a4a3a;">Next: confirm details + payment with the customer, then place it on Lulu (template: 8.5x11 hardcover casewrap, color).</p>' +
+'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'</div>';
+
+    await sendEmail('kbakerbcs1@gmail.com', subject, html);
+    res.json({ ok: true, message: "Your book request is in! Ken will email you to confirm the details and arrange payment." });
+  } catch (err) {
+    console.error('[customer/order-book] error:', err);
+    res.status(500).json({ error: 'Something went wrong sending your request. Please try again, or email Ken directly at kbakerbcs1@gmail.com.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/customer/request-link
 // Body: { email }
 // A returning customer who lost their story link asks for it again. We email
