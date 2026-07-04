@@ -197,13 +197,14 @@ async function showDashboard() {
       html += '<div class="empty">No customers yet. As soon as someone signs up at /signup.html they\'ll appear here.</div>';
     } else {
       html += '<table><thead><tr>' +
-        '<th>Name</th><th>Email</th><th>Status</th><th>Recordings</th><th>Drafts</th><th>Signed up</th><th>Last activity</th>' +
+        '<th>Name</th><th>Email</th><th>Status</th><th>Plan</th><th>Recordings</th><th>Drafts</th><th>Signed up</th><th>Last activity</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function(c){
         html += '<tr class="clickable" data-id="' + escapeHtml(c.id) + '">' +
           '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
           '<td>' + escapeHtml(c.email) + '</td>' +
           '<td><span class="status-pill status-' + escapeHtml(c.status) + '">' + escapeHtml(c.status.replace(/_/g,' ')) + '</span></td>' +
+          '<td>' + ({story:'Digital',hardcover:'Hardcover',legacy:'Family Legacy'}[c.plan] || 'Digital') + '</td>' +
           '<td>' + c.recording_count + '</td>' +
           '<td>' + c.draft_count + '</td>' +
           '<td class="muted">' + fmtDate(c.created_at) + '</td>' +
@@ -256,6 +257,7 @@ async function showCustomer(id) {
     html += '<div class="detail-card">';
     html +=   '<h2>' + escapeHtml(c.name) + ' — <span style="font-weight:normal;color:#888;">' + escapeHtml(c.email) + '</span></h2>';
     html +=   '<div class="detail-row"><div class="label">Status</div><div class="val"><span class="status-pill status-' + escapeHtml(c.status) + '">' + escapeHtml(c.status.replace(/_/g,' ')) + '</span></div></div>';
+    html +=   '<div class="detail-row"><div class="label">Plan</div><div class="val">' + ({story:'Digital Keepsake ($175)',hardcover:'Hardcover Memoir ($299)',legacy:'Family Legacy ($499)'}[c.plan] || 'Digital Keepsake ($175)') + '</div></div>';
     html +=   '<div class="detail-row"><div class="label">Signed up</div><div class="val">' + fmtDate(c.created_at) + '</div></div>';
     html +=   '<div class="detail-row"><div class="label">Paid at</div><div class="val">' + (c.paid_at ? fmtDate(c.paid_at) : '<span class="muted">not yet</span>') + '</div></div>';
     html +=   '<div class="detail-row"><div class="label">Customer ID</div><div class="val"><code>' + escapeHtml(c.id) + '</code></div></div>';

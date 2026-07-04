@@ -90,6 +90,7 @@ router.get('/customers', requireAdmin, async (req, res) => {
         c.id,
         c.email,
         c.name,
+        c.plan,
         c.status,
         c.paid_at,
         c.created_at,
@@ -113,7 +114,7 @@ router.get('/customers', requireAdmin, async (req, res) => {
 router.get('/customer/:id', requireAdmin, async (req, res) => {
   try {
     const customer = await db.queryOne(
-      `SELECT id, email, name, access_token, status, paid_at, created_at, updated_at,
+      `SELECT id, email, name, plan, access_token, status, paid_at, created_at, updated_at,
               stripe_customer_id, stripe_payment_intent_id
        FROM customers WHERE id = $1`,
       [req.params.id]
