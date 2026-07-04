@@ -20,7 +20,14 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const stripe = stripeKey ? new Stripe(stripeKey) : null;
 
 const FRONTEND_BASE = 'https://www.bcsmemorybox.com';
-const YOUR_STORY_PRICE_CENTS = 12500; // $125.00
+const YOUR_STORY_PRICE_CENTS = 12500; // legacy constant (kept for reference)
+
+// Pricing tiers. The customer's chosen plan (stored at signup) sets the amount.
+const PLANS = {
+  story:     { cents: 17500, name: 'Digital Keepsake \u2014 BCS Memory Box', desc: 'Your life story as a finished, polished memoir document. Photos included free. Two rounds of revisions.' },
+  hardcover: { cents: 29900, name: 'Hardcover Memoir \u2014 BCS Memory Box', desc: 'Your finished memoir PLUS a professionally printed hardcover book (one copy included). Premium color photos. Two rounds of revisions.' },
+  legacy:    { cents: 49900, name: 'Family Legacy \u2014 BCS Memory Box', desc: 'Everything in Hardcover, plus three hardcover copies, your recorded voice preserved, a longer story, and a personal welcome from Ken.' },
+};
 
 // ----------------------------------------------------------------------------
 // Router 1: checkout session creator (JSON-parsed body)
@@ -43,7 +50,7 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
     if (!token) return res.status(400).json({ error: 'Missing access token' });
 
     const customer = await db.queryOne(
-      'SELECT id, email, name, status, paid_at, access_token FROM customers WHERE access_token = $1',
+      'SELECT id, email, name, status, paid_at, access_token, plan FROM customers WHERE access_token = $1',
       [token]
     );
     if (!customer) return res.status(404).json({ error: 'Account not found' });
@@ -56,6 +63,9 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
         portalUrl: FRONTEND_BASE + '/yourstory.html?token=' + encodeURIComponent(customer.access_token),
       });
     }
+
+    const planKey = PLANS[customer.plan] ? customer.plan : 'story';
+    const planInfo = PLANS[planKey];
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -72,10 +82,10 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
           quantity: 1,
           price_data: {
             currency: 'usd',
-            unit_amount: YOUR_STORY_PRICE_CENTS,
+            unit_amount: planInfo.cents,
             product_data: {
-              name: 'Your Story — BCS Memory Box',
-              description: 'A polished memoir document in your own voice. Two rounds of revisions included.',
+              name: planInfo.name,
+              description: planInfo.desc,
             },
           },
         },
@@ -85,6 +95,7 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
       metadata: {
         customer_id: String(customer.id),
         access_token: customer.access_token,
+        plan: planKey,
       },
     });
 

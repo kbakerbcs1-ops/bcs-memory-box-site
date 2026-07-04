@@ -360,7 +360,7 @@ function renderDraftReady(customer, photoCount) {
       '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
       photoNote +
     '</div>' +
-    revisionRequestCard() + orderBookCard();
+    revisionRequestCard() + (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
 }
 
 function revisionRequestCard() {
@@ -393,7 +393,7 @@ function renderDelivered(customer, photoCount) {
       '<button class="btn btn-secondary" onclick="reopenStory(this)">Add more to your story</button>' +
       '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
     '</div>' +
-    orderBookCard();
+    (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
 }
 
 function renderRevisionRequested(customer) {
@@ -888,6 +888,19 @@ function bindRevisionHandler() {
     }
   });
 }
+// For customers whose plan already includes the hardcover book(s), show an
+// "included" note instead of the paid order card (so they are never charged twice).
+function includedBookCard(plan) {
+  var many = (plan === 'legacy');
+  return '<div class="card">' +
+    '<h2>Your hardcover ' + (many ? 'books are' : 'book is') + ' included</h2>' +
+    '<p>' + (many
+        ? 'Three hardcover copies come with your Family Legacy plan'
+        : 'A hardcover copy comes with your Hardcover Memoir plan') +
+      ' \u2014 there\'s nothing more to pay. Ken will arrange the printing and shipping and confirm the delivery details with you.</p>' +
+  '</div>';
+}
+
 // Card: order a printed hardcover book (V1 — emails Ken the request).
 function orderBookCard() {
   var istyle = 'width:100%;box-sizing:border-box;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:12px;';

@@ -26,6 +26,11 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Please enter a valid email address.' });
     }
 
+    // Which plan/tier they chose (story=$175, hardcover=$299, legacy=$499). Default story.
+    const ALLOWED_PLANS = ['story', 'hardcover', 'legacy'];
+    let plan = (req.body.plan || 'story').toString().toLowerCase();
+    if (!ALLOWED_PLANS.includes(plan)) plan = 'story';
+
     // If a customer already exists for this email and hasn't paid yet, reuse the
     // existing access_token (so they can retry checkout instead of getting blocked).
     // If they've already paid, send them back to their existing portal URL.
@@ -46,7 +51,8 @@ router.post('/signup', async (req, res) => {
           message: 'Welcome back. You already have an account — heading you to your story.',
         });
       }
-      // Has account but hasn't paid yet — resume checkout with the same token.
+      // Has account but hasn't paid yet — update their chosen plan and resume checkout.
+      await db.query('UPDATE customers SET plan = $1 WHERE id = $2', [plan, existing.id]).catch(function(){});
       return res.json({
         ok: true,
         alreadyExists: true,
@@ -58,10 +64,10 @@ router.post('/signup', async (req, res) => {
 
     const accessToken = db.randomToken(24);
     const result = await db.queryOne(
-      `INSERT INTO customers (email, name, access_token, status)
-       VALUES ($1, $2, $3, 'awaiting_payment')
+      `INSERT INTO customers (email, name, access_token, status, plan)
+       VALUES ($1, $2, $3, 'awaiting_payment', $4)
        RETURNING id, access_token`,
-      [email, name, accessToken]
+      [email, name, accessToken, plan]
     );
 
     res.json({
@@ -87,7 +93,7 @@ router.get('/me', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Missing access token' });
 
     const customer = await db.queryOne(
-      `SELECT id, email, name, status, paid_at, created_at
+      `SELECT id, email, name, status, paid_at, created_at, plan
        FROM customers
        WHERE access_token = $1`,
       [token]
