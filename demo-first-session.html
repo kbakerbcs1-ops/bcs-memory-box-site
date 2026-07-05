@@ -78,6 +78,7 @@
     font-size:19px;font-weight:700;padding:14px 34px;cursor:pointer;box-shadow:0 4px 14px rgba(111,71,32,.28);
   }
   .primary:hover{background:var(--brown-dk);}
+  .nav-right{display:flex;gap:12px;align-items:center;}
   .btn-lg{display:inline-block;margin-top:8px;}
 
   .done h1{font-size:27px;margin-bottom:16px;}
@@ -125,8 +126,11 @@
         <div class="reassure">No rush, and there are no wrong answers — just talk the way you would at your kitchen table. You can redo it as many times as you like.</div>
 
         <div class="nav">
-          <button id="skipBtn" class="ghost">Skip this one</button>
-          <button id="nextBtn" class="primary" hidden>Next &rarr;</button>
+          <button id="backBtn" class="ghost">&larr; Back</button>
+          <div class="nav-right">
+            <button id="skipBtn" class="ghost">Skip</button>
+            <button id="nextBtn" class="primary" hidden>Next &rarr;</button>
+          </div>
         </div>
       </section>
 
@@ -158,7 +162,7 @@
     { text:"If your grandchildren could hear just one thing from you, what would you want them to know?" }
   ];
 
-  var idx=-1, mediaStream=null, recorder=null, chunks=[], currentBlob=null;
+  var idx=-1, answers={}, mediaStream=null, recorder=null, chunks=[], currentBlob=null;
   var audioCtx=null, playingSrc=null, recording=false;
   var $=function(id){return document.getElementById(id);};
 
@@ -183,18 +187,28 @@
   function show(id){ ['welcome','prompt','done'].forEach(function(s){ $(s).hidden=(s!==id); }); }
 
   function renderPrompt(){
-    stopPlayback(); currentBlob=null; recording=false;
+    stopPlayback(); recording=false;
     var q=QUESTIONS[idx];
     show('prompt');
     $('progress').textContent = q.practice ? 'Warm-up' : ('Question '+idx+' of '+(QUESTIONS.length-1));
     $('question').textContent = q.text;
-    $('recordArea').hidden=false;
-    $('answer').hidden=true;
-    $('nextBtn').hidden=true;
     $('recBtn').className='recbtn';
     $('recHint').textContent='Press the button and just talk';
     $('nextBtn').textContent = (idx===QUESTIONS.length-1) ? 'Finish →' : 'Next →';
-    setTimeout(function(){ speak(q.voice||q.text); }, 450);
+    $('backBtn').textContent = (idx===0) ? '← Start over' : '← Back';
+    currentBlob = answers[idx] || null;
+    if(currentBlob){
+      // already answered — show the playback state so nothing is lost on the way back
+      $('recordArea').hidden=true;
+      $('answer').hidden=false;
+      $('nextBtn').hidden=false;
+      $('playAnswerBtn').textContent='▶ Hear what I said';
+    } else {
+      $('recordArea').hidden=false;
+      $('answer').hidden=true;
+      $('nextBtn').hidden=true;
+      setTimeout(function(){ speak(q.voice||q.text); }, 450);
+    }
   }
 
   function getCtx(){ audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
@@ -215,6 +229,7 @@
     recorder.ondataavailable=function(e){ if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop=function(){
       currentBlob = new Blob(chunks, {type: (chunks[0] && chunks[0].type) || 'audio/webm'});
+      answers[idx] = currentBlob;
       showAnswer();
     };
     recorder.start();
@@ -250,6 +265,12 @@
     }catch(e){ $('playAnswerBtn').textContent='▶ Hear what I said'; }
   }
 
+  function back(){
+    stopPlayback(); if('speechSynthesis' in window) speechSynthesis.cancel();
+    if(idx<=0){ show('welcome'); return; }
+    idx--; renderPrompt();
+  }
+
   function next(){
     stopPlayback(); if('speechSynthesis' in window) speechSynthesis.cancel();
     if(idx>=QUESTIONS.length-1){ show('done'); return; }
@@ -262,6 +283,7 @@
     $('hearBtn').onclick=function(){ var q=QUESTIONS[idx]; speak(q.voice||q.text); };
     $('playAnswerBtn').onclick=function(){ if(playingSrc){ stopPlayback(); $('playAnswerBtn').textContent='▶ Hear what I said'; } else { playAnswer(); } };
     $('rerecordBtn').onclick=function(){ $('answer').hidden=true; $('recordArea').hidden=false; $('nextBtn').hidden=true; $('recBtn').className='recbtn'; $('recHint').textContent='Press the button and just talk'; };
+    $('backBtn').onclick=back;
     $('nextBtn').onclick=next;
     $('skipBtn').onclick=next;
     $('restartBtn').onclick=function(){ idx=0; renderPrompt(); };
