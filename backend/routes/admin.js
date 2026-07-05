@@ -6,6 +6,11 @@ const express = require('express');
 const db = require('../lib/db');
 const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
+const crypto = require('crypto');
+const QRCode = require('qrcode');
+
+// Where the public listen page lives (the QR points here).
+const FRONTEND_BASE = process.env.FRONTEND_BASE_URL || 'https://www.bcsmemorybox.com';
 
 const router = express.Router();
 router.use(express.json());
@@ -148,7 +153,15 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
-    res.json({ ok: true, customer, recordings, drafts, photos });
+    const { rows: voiceClips } = await db.query(
+      `SELECT id, recording_id, public_token, person_name, label, created_at
+         FROM voice_clips
+        WHERE customer_id = $1
+        ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+
+    res.json({ ok: true, customer, recordings, drafts, photos, voiceClips });
   } catch (err) {
     console.error('[admin/customer/:id] error:', err);
     res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
@@ -446,5 +459,111 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
+
+// ===========================================================================
+// "THE VOICE" — QR-in-the-book voice clips
+// ---------------------------------------------------------------------------
+// A voice clip is a public, shareable link to ONE of a customer's recordings.
+// Ken generates one, we print its QR inside the hardcover, and family members
+// scan it to hear the person in their own voice. See routes/voice.js for the
+// public (unauthenticated) listen endpoints.
+// ===========================================================================
+
+function firstName(fullName) {
+  return String(fullName || '').trim().split(/\s+/)[0] || '';
+}
+
+// POST /api/admin/voice-clip
+// Body: { recording_id, person_name?, label? }
+// Creates (or returns the existing) voice clip for a recording and hands back
+// the public listen URL. person_name defaults to the customer's first name.
+router.post('/voice-clip', requireAdmin, async (req, res) => {
+  try {
+    const recordingId = req.body.recording_id;
+    if (!recordingId) return res.status(400).json({ error: 'Missing recording_id' });
+
+    const rec = await db.queryOne(
+      `SELECT r.id, r.customer_id, c.name AS customer_name
+         FROM recordings r JOIN customers c ON c.id = r.customer_id
+        WHERE r.id = $1`,
+      [recordingId]
+    );
+    if (!rec) return res.status(404).json({ error: 'Recording not found' });
+
+    // One clip per recording — if it already exists, just return it.
+    let clip = await db.queryOne(
+      'SELECT * FROM voice_clips WHERE recording_id = $1',
+      [recordingId]
+    );
+
+    const personName = (req.body.person_name != null && String(req.body.person_name).trim())
+      ? String(req.body.person_name).trim()
+      : firstName(rec.customer_name);
+    const label = (req.body.label != null && String(req.body.label).trim())
+      ? String(req.body.label).trim()
+      : null;
+
+    if (!clip) {
+      const token = crypto.randomBytes(16).toString('base64url'); // ~22 chars, unguessable
+      clip = await db.queryOne(
+        `INSERT INTO voice_clips (customer_id, recording_id, public_token, person_name, label)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [rec.customer_id, recordingId, token, personName, label]
+      );
+    } else {
+      // Let the admin refine the display text on an existing clip.
+      clip = await db.queryOne(
+        `UPDATE voice_clips SET person_name = $1, label = $2 WHERE id = $3 RETURNING *`,
+        [personName, label, clip.id]
+      );
+    }
+
+    res.json({ ok: true, clip, listenUrl: FRONTEND_BASE + '/listen.html?v=' + clip.public_token });
+  } catch (err) {
+    console.error('[admin/voice-clip create] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
+// GET /api/admin/voice-clip/:id/qr.png?session=...&size=1200
+// Returns a high-resolution PNG QR code (error-correction H, good for print)
+// pointing at the clip's public listen page. Drop it straight into the book.
+router.get('/voice-clip/:id/qr.png', requireAdmin, async (req, res) => {
+  try {
+    const clip = await db.queryOne('SELECT public_token FROM voice_clips WHERE id = $1', [req.params.id]);
+    if (!clip) return res.status(404).json({ error: 'Voice clip not found' });
+
+    let size = parseInt(req.query.size, 10);
+    if (!Number.isFinite(size) || size < 300) size = 1200;
+    if (size > 2000) size = 2000;
+
+    const url = FRONTEND_BASE + '/listen.html?v=' + clip.public_token;
+    const png = await QRCode.toBuffer(url, {
+      type: 'png',
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: size,
+      color: { dark: '#5a1a1a', light: '#ffffff' }, // BCS maroon on white
+    });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', (req.query.dl ? 'attachment' : 'inline') + '; filename="voice-qr.png"');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(png);
+  } catch (err) {
+    console.error('[admin/voice-clip qr] error:', err);
+    res.status(500).json({ error: 'Something went wrong generating the QR code.' });
+  }
+});
+
+// DELETE /api/admin/voice-clip/:id  — revoke a clip (link stops working).
+router.delete('/voice-clip/:id', requireAdmin, async (req, res) => {
+  try {
+    const r = await db.query('DELETE FROM voice_clips WHERE id = $1', [req.params.id]);
+    res.json({ ok: true, deleted: r.rowCount });
+  } catch (err) {
+    console.error('[admin/voice-clip delete] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
 
 module.exports = router;

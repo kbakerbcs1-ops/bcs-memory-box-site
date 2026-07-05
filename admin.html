@@ -63,6 +63,21 @@
   .recording-item:last-child{border-bottom:none;}
   .recording-item .info{flex:1;}
   .recording-item .actions{display:flex;gap:8px;}
+  .recording-block{border-bottom:1px solid #f0e8d4;}
+  .recording-block:last-child{border-bottom:none;}
+  .recording-block .recording-item{border-bottom:none;}
+  .btn-voice{background:#8b5a2b;color:#fff;border:none;cursor:pointer;}
+  .btn-voice:hover{background:#6f4720;}
+  .voice-slot{}
+  .voice-panel{background:#fbf7ef;border:1px solid #e8dfc9;border-radius:8px;padding:16px;margin:4px 0 14px;}
+  .voice-panel h3{font-size:15px;color:#6f4720;margin-bottom:10px;}
+  .voice-panel .vp-grid{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;}
+  .voice-panel img.qr{width:150px;height:150px;border:1px solid #e8dfc9;border-radius:6px;background:#fff;}
+  .voice-panel .vp-info{flex:1;min-width:230px;font-size:13px;color:#5a4a3a;}
+  .voice-panel .vp-url{display:block;background:#fff;border:1px solid #e8dfc9;border-radius:4px;padding:8px;font-size:12px;word-break:break-all;margin:6px 0 10px;color:#2a2520;}
+  .voice-panel .vp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .voice-panel .btn-danger-sm{background:#fff;color:#c0392b;border:1px solid #e0b4ae;}
+
   .btn{display:inline-block;padding:8px 14px;font-size:13px;font-family:Georgia,serif;border:1px solid #8b5a2b;color:#8b5a2b;background:#fff;border-radius:4px;text-decoration:none;cursor:pointer;}
   .btn:hover{background:#8b5a2b;color:#fff;}
   .btn:disabled{opacity:0.5;cursor:not-allowed;}
@@ -93,6 +108,9 @@
 
 <script>
 var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+var FRONTEND_BASE = 'https://www.bcsmemorybox.com';
+var currentCustomerId = null;
+var voiceClipByRec = {};
 var SESSION_KEY = 'bcs_admin_session';
 
 function getSession() { try { return localStorage.getItem(SESSION_KEY); } catch(e) { return null; } }
@@ -117,6 +135,73 @@ async function api(path, opts) {
   var data = await resp.json();
   if (!resp.ok) throw new Error(data.error || 'API error');
   return data;
+}
+
+// ============================================================================
+// "The Voice" — QR-in-the-book voice clips (admin controls)
+// ============================================================================
+function listenUrlFor(clip){ return FRONTEND_BASE + '/listen.html?v=' + clip.public_token; }
+
+function voicePanelHtml(clip){
+  var sess = encodeURIComponent(getSession());
+  var url = listenUrlFor(clip);
+  var qrView = API_BASE + '/api/admin/voice-clip/' + clip.id + '/qr.png?size=600&session=' + sess;
+  var qrPrint = API_BASE + '/api/admin/voice-clip/' + clip.id + '/qr.png?size=1200&dl=1&session=' + sess;
+  return '<div class="voice-panel">' +
+      '<h3>🎙 Voice QR is ON for this recording</h3>' +
+      '<div class="vp-grid">' +
+        '<img class="qr" src="' + qrView + '" alt="QR code">' +
+        '<div class="vp-info">' +
+          '<div><strong>Says:</strong> “Hear ' + escapeHtml(clip.person_name || 'them') + ' in their own voice”' +
+            (clip.label ? ' — “' + escapeHtml(clip.label) + '”' : '') + '</div>' +
+          '<div style="margin-top:8px;"><strong>Listen link (what the QR opens):</strong></div>' +
+          '<code class="vp-url">' + escapeHtml(url) + '</code>' +
+          '<div class="vp-actions">' +
+            '<a class="btn" href="' + qrPrint + '" target="_blank" download="voice-qr.png">⬇ Download QR for the book (high-res)</a>' +
+            '<a class="btn" href="' + escapeHtml(url) + '" target="_blank">▶ Test the listen page</a>' +
+            '<button class="btn btn-danger-sm" onclick="removeVoiceClip(\'' + clip.id + '\',\'' + clip.recording_id + '\')">Remove</button>' +
+          '</div>' +
+          '<div class="muted" style="margin-top:10px;font-size:12px;">Place the downloaded QR image inside the hardcover (e.g. a “Hear me tell it” page). Anyone who scans it with a phone camera hears this recording — no app, no login.</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+// Create a clip for a recording, or (if it exists) just reveal the panel.
+async function toggleVoice(recordingId){
+  var slot = document.getElementById('voice-slot-' + recordingId);
+  if (!slot) return;
+  if (slot.innerHTML.trim() !== '') { slot.innerHTML = ''; return; } // collapse if open
+  if (voiceClipByRec[recordingId]) { slot.innerHTML = voicePanelHtml(voiceClipByRec[recordingId]); return; }
+  slot.innerHTML = '<div class="voice-panel"><span class="muted">Creating Voice QR…</span></div>';
+  try {
+    var label = prompt('Optional: a short label for this clip (e.g. "The day we met"). Leave blank to skip.', '');
+    var body = { recording_id: recordingId };
+    if (label && label.trim()) body.label = label.trim();
+    var res = await api('/api/admin/voice-clip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    voiceClipByRec[recordingId] = res.clip;
+    slot.innerHTML = voicePanelHtml(res.clip);
+  } catch (e) {
+    slot.innerHTML = '<div class="voice-panel"><span style="color:#c0392b;">Could not create the Voice QR: ' + escapeHtml(e.message) + '</span></div>';
+  }
+}
+
+async function removeVoiceClip(clipId, recordingId){
+  if (!confirm('Remove this Voice QR? The printed code will stop working.')) return;
+  try {
+    await api('/api/admin/voice-clip/' + clipId, { method: 'DELETE' });
+    delete voiceClipByRec[recordingId];
+    var slot = document.getElementById('voice-slot-' + recordingId);
+    if (slot) slot.innerHTML = '';
+    // reflect the checkmark change
+    if (currentCustomerId) showCustomer(currentCustomerId);
+  } catch (e) {
+    alert('Could not remove: ' + e.message);
+  }
 }
 
 // ============================================================================
@@ -253,6 +338,9 @@ async function showCustomer(id) {
   try {
     var data = await api('/api/admin/customer/' + encodeURIComponent(id));
     var c = data.customer;
+    currentCustomerId = c.id;
+    voiceClipByRec = {};
+    (data.voiceClips || []).forEach(function(v){ voiceClipByRec[v.recording_id] = v; });
     var html = '<a class="back-link" id="back-link">← Back to all customers</a>';
     html += '<div class="detail-card">';
     html +=   '<h2>' + escapeHtml(c.name) + ' — <span style="font-weight:normal;color:#888;">' + escapeHtml(c.email) + '</span></h2>';
@@ -275,18 +363,23 @@ async function showCustomer(id) {
     } else {
       html += '<div class="recording-list">';
       data.recordings.forEach(function(r){
-        html += '<div class="recording-item">' +
-          '<div class="info">' +
-            '<strong>' + escapeHtml(r.original_filename || 'recording') + '</strong> ' +
-            '<span class="muted">' + fmtSize(r.size_bytes) + ' · ' + fmtDate(r.created_at) + '</span><br>' +
-            '<span class="muted">Transcript: ' + escapeHtml(r.transcript_status) +
-              (r.transcript_length ? ' (' + r.transcript_length + ' chars)' : '') +
-              (r.transcript_error ? ' — error: ' + escapeHtml(r.transcript_error) : '') +
-            '</span>' +
+        var hasClip = !!voiceClipByRec[r.id];
+        html += '<div class="recording-block">' +
+          '<div class="recording-item">' +
+            '<div class="info">' +
+              '<strong>' + escapeHtml(r.original_filename || 'recording') + '</strong> ' +
+              '<span class="muted">' + fmtSize(r.size_bytes) + ' · ' + fmtDate(r.created_at) + '</span><br>' +
+              '<span class="muted">Transcript: ' + escapeHtml(r.transcript_status) +
+                (r.transcript_length ? ' (' + r.transcript_length + ' chars)' : '') +
+                (r.transcript_error ? ' — error: ' + escapeHtml(r.transcript_error) : '') +
+              '</span>' +
+            '</div>' +
+            '<div class="actions">' +
+              '<button class="btn btn-voice" onclick="toggleVoice(\'' + r.id + '\')">' + (hasClip ? '\uD83C\uDF99 Voice QR \u2713' : '\uD83C\uDF99 Voice QR') + '</button>' +
+              '<a class="btn" href="' + API_BASE + '/api/admin/recording/' + r.id + '/download?session=' + encodeURIComponent(getSession()) + '" target="_blank">Download</a>' +
+            '</div>' +
           '</div>' +
-          '<div class="actions">' +
-            '<a class="btn" href="' + API_BASE + '/api/admin/recording/' + r.id + '/download?session=' + encodeURIComponent(getSession()) + '" target="_blank">Download</a>' +
-          '</div>' +
+          '<div class="voice-slot" id="voice-slot-' + r.id + '">' + (hasClip ? voicePanelHtml(voiceClipByRec[r.id]) : '') + '</div>' +
         '</div>';
       });
       html += '</div>';

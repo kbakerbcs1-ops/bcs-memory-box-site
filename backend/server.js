@@ -14,6 +14,7 @@ const uploadRoutes   = require('./routes/upload');
 const photoRoutes    = require('./routes/photo');
 const adminRoutes    = require('./routes/admin');
 const finishRoutes   = require('./routes/finish');
+const voiceRoutes    = require('./routes/voice');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers } = require('./lib/cleanup');
 
@@ -107,6 +108,7 @@ app.use('/api/customer/upload-photo', photoRoutes);
 // Admin (Ken's dashboard)
 app.use('/api/admin', adminRoutes);
 app.use('/api/customer/finish-recording', finishRoutes);
+app.use('/api/voice', voiceRoutes);          // public 'listen' links for QR-in-the-book
 
 // ============================================================================
 // /trial — original free-trial endpoint (unchanged, still serves the homepage

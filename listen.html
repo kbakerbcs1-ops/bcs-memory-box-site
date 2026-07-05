@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>In Their Own Voice — BCS Memory Box</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="bcs-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brown:#8b5a2b; --brown-dk:#6f4720; --cream:#fbf7ef; --card:#ffffff;
+    --ink:#2a2520; --muted:#7a6f63; --maroon:#5a1a1a; --line:#e8dfc9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:'Open Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+    background:linear-gradient(180deg,#fbf7ef 0%,#f3ead6 100%);
+    color:var(--ink); min-height:100%;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .card{
+    background:var(--card); width:100%; max-width:460px; border-radius:20px;
+    box-shadow:0 12px 40px rgba(90,40,20,0.12); padding:38px 30px 30px;
+    text-align:center; border:1px solid var(--line);
+  }
+  .logo{width:74px;height:74px;object-fit:contain;margin:0 auto 18px;display:block;}
+  .kicker{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--brown);font-weight:700;margin-bottom:12px;}
+  h1{font-family:'Merriweather',Georgia,serif;font-weight:700;font-size:27px;line-height:1.25;color:var(--ink);margin-bottom:8px;}
+  h1 .name{color:var(--brown-dk);}
+  .label{font-family:'Merriweather',Georgia,serif;font-style:italic;font-size:18px;color:var(--muted);margin-top:4px;}
+  .player{margin:30px 0 14px;}
+  .playbtn{
+    width:118px;height:118px;border-radius:50%;border:none;cursor:pointer;
+    background:radial-gradient(circle at 35% 30%,#a56b34,#6f4720);
+    box-shadow:0 8px 22px rgba(111,71,32,0.38);
+    display:flex;align-items:center;justify-content:center;margin:0 auto;
+    transition:transform .12s ease, box-shadow .12s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .playbtn:active{transform:scale(0.95);}
+  .playbtn:disabled{opacity:.5;cursor:default;}
+  .playbtn svg{width:52px;height:52px;fill:#fff;}
+  .playbtn.playing svg.ic-play{display:none;}
+  .playbtn:not(.playing) svg.ic-pause{display:none;}
+  .hint{font-size:16px;color:var(--muted);margin-top:16px;min-height:22px;}
+  .progress{height:7px;background:#efe6d4;border-radius:6px;margin:24px auto 6px;max-width:320px;overflow:hidden;display:none;}
+  .progress .bar{height:100%;width:0;background:var(--brown);border-radius:6px;transition:width .15s linear;}
+  .times{display:none;justify-content:space-between;max-width:320px;margin:0 auto;font-size:12px;color:var(--muted);}
+  .foot{margin-top:26px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);}
+  .foot a{color:var(--brown);text-decoration:none;font-weight:600;}
+  .err{display:none;color:#8a3b2f;font-size:16px;line-height:1.5;margin-top:8px;}
+  .loading{color:var(--muted);font-size:16px;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="bcs-logo.png" alt="BCS Memory Box">
+    <div id="loading" class="loading">Loading…</div>
+
+    <div id="content" style="display:none;">
+      <div class="kicker">In Their Own Voice</div>
+      <h1 id="title">Hear <span class="name" id="name">them</span></h1>
+      <div class="label" id="label" style="display:none;"></div>
+
+      <div class="player">
+        <button id="playbtn" class="playbtn" aria-label="Play recording" disabled>
+          <svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="ic-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+        </button>
+        <div class="progress" id="progress"><div class="bar" id="bar"></div></div>
+        <div class="times" id="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+        <div class="hint" id="hint">Tap to play</div>
+      </div>
+    </div>
+
+    <div id="error" class="err"></div>
+
+    <div class="foot">
+      A keepsake from <a href="https://www.bcsmemorybox.com" target="_blank" rel="noopener">BCS Memory Box</a><br>
+      Preserving life stories, in the voices that lived them.
+    </div>
+  </div>
+
+<script>
+(function(){
+  var API='https://bcs-memory-box-site.onrender.com';
+  var params=new URLSearchParams(location.search);
+  var token=params.get('v');
+
+  var el=function(id){return document.getElementById(id);};
+  function showError(msg){
+    el('loading').style.display='none';
+    el('content').style.display='none';
+    var e=el('error'); e.textContent=msg; e.style.display='block';
+  }
+  function fmt(t){ if(!isFinite(t)||t<0)t=0; var m=Math.floor(t/60),s=Math.floor(t%60); return m+':'+(s<10?'0':'')+s; }
+
+  if(!token){ showError('This voice link is missing its code. Please scan the QR code in the book again.'); return; }
+
+  var audio=new Audio();
+  audio.preload='none';
+  audio.src=API+'/api/voice/'+encodeURIComponent(token)+'/audio';
+
+  fetch(API+'/api/voice/'+encodeURIComponent(token))
+    .then(function(r){ if(!r.ok) throw new Error('notfound'); return r.json(); })
+    .then(function(d){
+      el('loading').style.display='none';
+      el('content').style.display='block';
+      if(d.personName){
+        el('name').textContent=d.personName;
+        el('title').innerHTML='Hear <span class="name">'+escapeHtml(d.personName)+'</span><br>in their own voice';
+        document.title=d.personName+' — In Their Own Voice';
+      } else {
+        el('title').innerHTML='Hear them<br>in their own voice';
+      }
+      if(d.label){ var l=el('label'); l.textContent='“'+d.label+'”'; l.style.display='block'; }
+      el('playbtn').disabled=false;
+    })
+    .catch(function(){
+      showError('We couldn’t find this voice recording. Please scan the QR code in the book again, or contact BCS Memory Box.');
+    });
+
+  var btn=el('playbtn'), progress=el('progress'), times=el('times'), bar=el('bar'), hint=el('hint');
+
+  btn.addEventListener('click', function(){
+    if(audio.paused){
+      var p=audio.play();
+      if(p&&p.catch){ p.catch(function(){ hint.textContent='Tap play once more to start.'; }); }
+    } else { audio.pause(); }
+  });
+
+  audio.addEventListener('playing', function(){
+    btn.classList.add('playing'); btn.setAttribute('aria-label','Pause recording');
+    hint.textContent='Playing…'; progress.style.display='block'; times.style.display='flex';
+  });
+  audio.addEventListener('pause', function(){
+    btn.classList.remove('playing'); btn.setAttribute('aria-label','Play recording');
+    if(!audio.ended) hint.textContent='Paused — tap to continue';
+  });
+  audio.addEventListener('ended', function(){
+    btn.classList.remove('playing'); hint.textContent='Tap to play again';
+    bar.style.width='0%'; el('cur').textContent='0:00';
+  });
+  audio.addEventListener('waiting', function(){ hint.textContent='Loading…'; });
+  audio.addEventListener('loadedmetadata', function(){ el('dur').textContent=fmt(audio.duration); });
+  audio.addEventListener('timeupdate', function(){
+    if(audio.duration){ bar.style.width=(audio.currentTime/audio.duration*100)+'%'; el('cur').textContent=fmt(audio.currentTime); }
+  });
+  audio.addEventListener('error', function(){ hint.textContent='Sorry — this recording could not be played.'; });
+
+  function escapeHtml(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+})();
+</script>
+</body>
+</html>
