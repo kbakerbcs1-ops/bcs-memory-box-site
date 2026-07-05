@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your First Story — BCS Memory Box (Practice)</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="bcs-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brown:#8b5a2b; --brown-dk:#6f4720; --cream:#fbf7ef; --card:#ffffff;
+    --ink:#2a2520; --muted:#6f6357; --maroon:#5a1a1a; --line:#e8dfc9; --rec:#c0392b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'Open Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+    background:linear-gradient(180deg,#fbf7ef 0%,#f3ead6 100%);
+    color:var(--ink); min-height:100vh; padding:20px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .wrap{width:100%; max-width:620px;}
+  .demo-banner{
+    background:#fff4d6; border:1px solid #e6c98a; color:#7a5b1e;
+    font-size:15px; text-align:center; padding:10px 14px; border-radius:10px; margin-bottom:16px;
+  }
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:20px;
+    box-shadow:0 12px 40px rgba(90,40,20,0.10); padding:38px 32px; text-align:center;
+  }
+  .logo{width:70px;height:70px;object-fit:contain;margin:0 auto 16px;display:block;}
+  .screen{display:block;}
+  .screen[hidden]{display:none;}
+  .kicker{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--brown);font-weight:700;margin-bottom:14px;}
+  h1{font-family:'Merriweather',Georgia,serif;font-weight:700;color:var(--ink);line-height:1.3;}
+  .welcome h1{font-size:28px;margin-bottom:16px;}
+  .welcome p{font-size:19px;line-height:1.6;color:#3a332c;margin-bottom:16px;}
+  .welcome .sig{font-family:'Merriweather',serif;font-style:italic;color:var(--brown-dk);font-size:18px;}
+  .tiny{font-size:15px;color:var(--muted);margin-top:8px;}
+
+  .progress{font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--brown);font-weight:700;margin-bottom:18px;}
+  .question{font-size:27px;line-height:1.4;margin-bottom:8px;min-height:2.4em;display:flex;align-items:center;justify-content:center;}
+  .hear{background:none;border:none;color:var(--brown);font-size:16px;font-weight:600;cursor:pointer;padding:8px;margin-bottom:8px;}
+  .hear:hover{text-decoration:underline;}
+
+  #recordArea{margin:22px 0 10px;}
+  .recbtn{
+    width:130px;height:130px;border-radius:50%;border:none;cursor:pointer;margin:0 auto;
+    background:radial-gradient(circle at 35% 30%,#a56b34,#6f4720);
+    box-shadow:0 8px 22px rgba(111,71,32,0.38);
+    display:flex;align-items:center;justify-content:center;transition:transform .1s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .recbtn:active{transform:scale(0.96);}
+  .recbtn svg{width:56px;height:56px;fill:#fff;}
+  .recbtn.rec{background:radial-gradient(circle at 35% 30%,#e05545,#a5271a);animation:pulse 1.1s infinite;}
+  .recbtn.rec svg{display:none;}
+  .recbtn.rec::after{content:'';width:44px;height:44px;background:#fff;border-radius:8px;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(192,57,43,.45);}70%{box-shadow:0 0 0 22px rgba(192,57,43,0);}100%{box-shadow:0 0 0 0 rgba(192,57,43,0);}}
+  .rechint{font-size:19px;color:var(--ink);margin-top:18px;font-weight:600;min-height:1.5em;}
+
+  #answer{margin:14px 0;}
+  .answer-label{font-size:18px;color:#2a7a2a;font-weight:700;margin-bottom:14px;}
+  .answer-play{
+    background:var(--brown);color:#fff;border:none;border-radius:40px;
+    font-size:19px;font-weight:600;padding:14px 30px;cursor:pointer;
+  }
+  .answer-play:hover{background:var(--brown-dk);}
+  .answer-actions{margin-top:14px;}
+
+  .reassure{font-size:16px;color:var(--muted);line-height:1.6;margin:22px auto 0;max-width:460px;}
+  .nav{display:flex;justify-content:space-between;align-items:center;margin-top:26px;gap:12px;}
+  .ghost{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:10px 12px;}
+  .ghost:hover{color:var(--brown);text-decoration:underline;}
+  .primary{
+    background:var(--brown);color:#fff;border:none;border-radius:40px;
+    font-size:19px;font-weight:700;padding:14px 34px;cursor:pointer;box-shadow:0 4px 14px rgba(111,71,32,.28);
+  }
+  .primary:hover{background:var(--brown-dk);}
+  .btn-lg{display:inline-block;margin-top:8px;}
+
+  .done h1{font-size:27px;margin-bottom:16px;}
+  .done p{font-size:19px;line-height:1.6;color:#3a332c;margin-bottom:16px;}
+  .foot{margin-top:22px;font-size:14px;color:var(--muted);}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="demo-banner">Practice demo — nothing here is saved or sent. Try it just like a first-time customer would.</div>
+    <div class="card">
+      <img class="logo" src="bcs-logo.png" alt="BCS Memory Box">
+
+      <!-- WELCOME -->
+      <section id="welcome" class="screen welcome">
+        <div class="kicker">Your First Story</div>
+        <h1>Take your time — this is easy.</h1>
+        <p>I'm just going to ask you a few simple questions, the kind you'd answer at your kitchen table. There's nothing to prepare, and there are no wrong answers.</p>
+        <p>You can have each question <strong>read aloud</strong>, and you can <strong>hear yourself</strong> after you answer. We'll start with something easy.</p>
+        <p class="sig">Whenever you're ready — just press the button. — Ken</p>
+        <button id="beginBtn" class="primary btn-lg">Let's begin &rarr;</button>
+      </section>
+
+      <!-- PROMPT (reused for every question) -->
+      <section id="prompt" class="screen" hidden>
+        <div class="progress" id="progress"></div>
+        <h1 class="question" id="question"></h1>
+        <button class="hear" id="hearBtn">🔊 Hear the question again</button>
+
+        <div id="recordArea">
+          <button id="recBtn" class="recbtn" aria-label="Press to record">
+            <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12h-2z"/></svg>
+          </button>
+          <div class="rechint" id="recHint">Press the button and just talk</div>
+        </div>
+
+        <div id="answer" hidden>
+          <div class="answer-label">✓ Got it. Here's what you said:</div>
+          <button id="playAnswerBtn" class="answer-play">▶ Hear what I said</button>
+          <div class="answer-actions">
+            <button id="rerecordBtn" class="ghost">↺ Record it again</button>
+          </div>
+        </div>
+
+        <div class="reassure">No rush, and there are no wrong answers — just talk the way you would at your kitchen table. You can redo it as many times as you like.</div>
+
+        <div class="nav">
+          <button id="skipBtn" class="ghost">Skip this one</button>
+          <button id="nextBtn" class="primary" hidden>Next &rarr;</button>
+        </div>
+      </section>
+
+      <!-- DONE -->
+      <section id="done" class="screen done" hidden>
+        <div class="kicker">That's the idea</div>
+        <h1>See how easy that was?</h1>
+        <p>That's all there is to it — just answering a few friendly questions, in your own voice and your own time.</p>
+        <p>In the real Memory Box, everything you say is <strong>saved automatically</strong>, and we turn all your stories into a beautiful finished memoir — in your own words, in your own voice.</p>
+        <p class="sig">Thank you for giving it a try. — Ken</p>
+        <button id="restartBtn" class="primary btn-lg">Try it again</button>
+        <div class="foot">A keepsake from BCS Memory Box — preserving life stories, in the voices that lived them.</div>
+      </section>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // Warm arc: easy warm-up → place → people → turning point → the story they love → dreams → legacy.
+  var QUESTIONS = [
+    { practice:true,
+      text:"Let's warm up. Just say hello — tell me your name, and where you're from.",
+      voice:"Let's warm up. Just say hello, and tell me your name, and where you're from." },
+    { text:"Tell me about the house you grew up in. What do you see when you walk through the front door?" },
+    { text:"Who did you look up to most when you were young — and what did they teach you?" },
+    { text:"Tell me about a moment when you knew your life was about to change." },
+    { text:"What's a story your family always asks you to tell?" },
+    { text:"What did you dream of becoming as a child — and where did life actually take you?" },
+    { text:"If your grandchildren could hear just one thing from you, what would you want them to know?" }
+  ];
+
+  var idx=-1, mediaStream=null, recorder=null, chunks=[], currentBlob=null;
+  var audioCtx=null, playingSrc=null, recording=false;
+  var $=function(id){return document.getElementById(id);};
+
+  // ---- spoken questions (browser voice) ----
+  var preferredVoice=null;
+  function pickVoice(){
+    if(!('speechSynthesis' in window)) return;
+    var vs=speechSynthesis.getVoices();
+    preferredVoice = vs.find(function(v){return /Samantha|Karen|Moira|Serena|Victoria|Google US English|Jenny|Aria|Nicky/i.test(v.name);})
+      || vs.find(function(v){return v.lang && v.lang.indexOf('en')===0;}) || vs[0] || null;
+  }
+  if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
+  function speak(t){
+    if(!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance(t);
+    if(preferredVoice) u.voice=preferredVoice;
+    u.rate=0.92; u.pitch=1.0;
+    speechSynthesis.speak(u);
+  }
+
+  function show(id){ ['welcome','prompt','done'].forEach(function(s){ $(s).hidden=(s!==id); }); }
+
+  function renderPrompt(){
+    stopPlayback(); currentBlob=null; recording=false;
+    var q=QUESTIONS[idx];
+    show('prompt');
+    $('progress').textContent = q.practice ? 'Warm-up' : ('Question '+idx+' of '+(QUESTIONS.length-1));
+    $('question').textContent = q.text;
+    $('recordArea').hidden=false;
+    $('answer').hidden=true;
+    $('nextBtn').hidden=true;
+    $('recBtn').className='recbtn';
+    $('recHint').textContent='Press the button and just talk';
+    $('nextBtn').textContent = (idx===QUESTIONS.length-1) ? 'Finish →' : 'Next →';
+    setTimeout(function(){ speak(q.voice||q.text); }, 450);
+  }
+
+  function getCtx(){ audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+
+  async function ensureMic(){
+    if(mediaStream) return true;
+    try{ mediaStream = await navigator.mediaDevices.getUserMedia({audio:true}); return true; }
+    catch(e){ $('recHint').textContent="I couldn't reach your microphone. Please allow microphone access, then press the button again."; return false; }
+  }
+
+  async function toggleRecord(){
+    if(recording){ stopRecord(); return; }
+    var ok=await ensureMic(); if(!ok) return;
+    speechSynthesis.cancel();
+    chunks=[];
+    var mime = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : '';
+    recorder = mime ? new MediaRecorder(mediaStream,{mimeType:mime}) : new MediaRecorder(mediaStream);
+    recorder.ondataavailable=function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop=function(){
+      currentBlob = new Blob(chunks, {type: (chunks[0] && chunks[0].type) || 'audio/webm'});
+      showAnswer();
+    };
+    recorder.start();
+    recording=true;
+    $('recBtn').className='recbtn rec';
+    $('recHint').textContent='● Recording… tap when you’re finished';
+  }
+  function stopRecord(){
+    if(recorder && recorder.state!=='inactive'){ recorder.stop(); }
+    recording=false;
+    $('recBtn').className='recbtn';
+    $('recHint').textContent='One moment…';
+  }
+  function showAnswer(){
+    $('recordArea').hidden=true;
+    $('answer').hidden=false;
+    $('nextBtn').hidden=false;
+    $('playAnswerBtn').textContent='▶ Hear what I said';
+  }
+
+  function stopPlayback(){ if(playingSrc){ try{playingSrc.stop();}catch(e){} playingSrc=null; } }
+  async function playAnswer(){
+    if(!currentBlob) return;
+    stopPlayback();
+    var ctx=getCtx(); if(ctx.state==='suspended'){ try{ await ctx.resume(); }catch(e){} }
+    try{
+      var ab=await currentBlob.arrayBuffer();
+      var buf=await ctx.decodeAudioData(ab);
+      var src=ctx.createBufferSource(); src.buffer=buf; src.connect(ctx.destination);
+      src.onended=function(){ playingSrc=null; $('playAnswerBtn').textContent='▶ Hear what I said'; };
+      src.start(0); playingSrc=src;
+      $('playAnswerBtn').textContent='■ Stop';
+    }catch(e){ $('playAnswerBtn').textContent='▶ Hear what I said'; }
+  }
+
+  function next(){
+    stopPlayback(); if('speechSynthesis' in window) speechSynthesis.cancel();
+    if(idx>=QUESTIONS.length-1){ show('done'); return; }
+    idx++; renderPrompt();
+  }
+
+  document.addEventListener('DOMContentLoaded',function(){
+    $('beginBtn').onclick=function(){ getCtx(); idx=0; renderPrompt(); };
+    $('recBtn').onclick=toggleRecord;
+    $('hearBtn').onclick=function(){ var q=QUESTIONS[idx]; speak(q.voice||q.text); };
+    $('playAnswerBtn').onclick=function(){ if(playingSrc){ stopPlayback(); $('playAnswerBtn').textContent='▶ Hear what I said'; } else { playAnswer(); } };
+    $('rerecordBtn').onclick=function(){ $('answer').hidden=true; $('recordArea').hidden=false; $('nextBtn').hidden=true; $('recBtn').className='recbtn'; $('recHint').textContent='Press the button and just talk'; };
+    $('nextBtn').onclick=next;
+    $('skipBtn').onclick=next;
+    $('restartBtn').onclick=function(){ idx=0; renderPrompt(); };
+  });
+})();
+</script>
+</body>
+</html>
