@@ -53,13 +53,25 @@ router.get('/:token/audio', async (req, res) => {
     const clip = await findClip(req.params.token);
     if (!clip) return res.status(404).json({ error: 'This voice link was not found.' });
 
-    const { stream, contentType, contentLength } = await storage.getObjectStream(clip.storage_key);
+    // Honor HTTP Range requests. Browser <audio> elements request byte ranges
+    // (and MediaRecorder .webm files in particular need this), so we pass the
+    // range through to R2 and return a proper 206 with Content-Range. Without
+    // this the media element stalls even though the bytes are all available.
+    const range = req.headers.range;
+    const { stream, contentType, contentLength, contentRange } =
+      await storage.getObjectStream(clip.storage_key, range);
+
     res.setHeader('Content-Type', contentType || 'audio/mpeg');
-    if (contentLength) res.setHeader('Content-Length', contentLength);
     res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Accept-Ranges', 'bytes');
     // Public keepsake link — safe to cache on the phone/CDN for a day.
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.setHeader('Accept-Ranges', 'none');
+
+    if (range && contentRange) {
+      res.status(206);
+      res.setHeader('Content-Range', contentRange);
+    }
+    if (contentLength != null) res.setHeader('Content-Length', contentLength);
     stream.pipe(res);
   } catch (err) {
     console.error('[voice/:token/audio] error:', err);

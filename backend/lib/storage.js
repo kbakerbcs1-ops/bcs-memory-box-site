@@ -44,10 +44,17 @@ async function getObjectBuffer(key) {
   return Buffer.concat(chunks);
 }
 
-async function getObjectStream(key) {
+async function getObjectStream(key, range) {
   if (!enabled) throw new Error('Storage not configured.');
-  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  return { stream: resp.Body, contentType: resp.ContentType, contentLength: resp.ContentLength };
+  const params = { Bucket: bucket, Key: key };
+  if (range) params.Range = range; // e.g. 'bytes=0-1023' — enables media seeking/streaming
+  const resp = await s3.send(new GetObjectCommand(params));
+  return {
+    stream: resp.Body,
+    contentType: resp.ContentType,
+    contentLength: resp.ContentLength,
+    contentRange: resp.ContentRange, // 'bytes 0-1023/1157990' when a range was requested
+  };
 }
 
 async function deleteObject(key) {
