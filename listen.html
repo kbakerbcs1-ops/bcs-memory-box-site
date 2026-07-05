@@ -101,8 +101,28 @@
   if(!token){ showError('This voice link is missing its code. Please scan the QR code in the book again.'); return; }
 
   var audio=new Audio();
-  audio.preload='none';
-  audio.src=API+'/api/voice/'+encodeURIComponent(token)+'/audio';
+  var audioUrl=API+'/api/voice/'+encodeURIComponent(token)+'/audio';
+  var loaded=false, loading=false;
+
+  // Cross-origin <audio> streaming stalls through the host's proxy, so we
+  // fetch the (small) clip as a blob — which works cross-origin — and play it
+  // locally. First tap downloads it; after that playback is instant.
+  async function ensureLoaded(){
+    if(loaded) return true;
+    if(loading) return false;
+    loading=true; hint.textContent='Loading…';
+    try{
+      var resp=await fetch(audioUrl);
+      if(!resp.ok) throw new Error('http '+resp.status);
+      var blob=await resp.blob();
+      audio.src=URL.createObjectURL(blob);
+      loaded=true; loading=false; return true;
+    }catch(e){
+      loading=false;
+      hint.textContent='Sorry — this recording could not be loaded. Check your connection and tap to try again.';
+      return false;
+    }
+  }
 
   fetch(API+'/api/voice/'+encodeURIComponent(token))
     .then(function(r){ if(!r.ok) throw new Error('notfound'); return r.json(); })
@@ -125,11 +145,13 @@
 
   var btn=el('playbtn'), progress=el('progress'), times=el('times'), bar=el('bar'), hint=el('hint');
 
-  btn.addEventListener('click', function(){
-    if(audio.paused){
-      var p=audio.play();
-      if(p&&p.catch){ p.catch(function(){ hint.textContent='Tap play once more to start.'; }); }
-    } else { audio.pause(); }
+  btn.addEventListener('click', async function(){
+    if(!loaded){
+      var ok=await ensureLoaded();
+      if(ok){ try{ await audio.play(); }catch(e){ hint.textContent='Tap play once more to start.'; } }
+      return;
+    }
+    if(audio.paused){ try{ await audio.play(); }catch(e){} } else { audio.pause(); }
   });
 
   audio.addEventListener('playing', function(){
