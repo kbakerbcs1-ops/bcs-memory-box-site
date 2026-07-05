@@ -89,91 +89,94 @@
   var API='https://bcs-memory-box-site.onrender.com';
   var params=new URLSearchParams(location.search);
   var token=params.get('v');
-
   var el=function(id){return document.getElementById(id);};
-  function showError(msg){
-    el('loading').style.display='none';
-    el('content').style.display='none';
-    var e=el('error'); e.textContent=msg; e.style.display='block';
-  }
+  function showError(msg){ el('loading').style.display='none'; el('content').style.display='none'; var e=el('error'); e.textContent=msg; e.style.display='block'; }
   function fmt(t){ if(!isFinite(t)||t<0)t=0; var m=Math.floor(t/60),s=Math.floor(t%60); return m+':'+(s<10?'0':'')+s; }
+  function escapeHtml(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 
   if(!token){ showError('This voice link is missing its code. Please scan the QR code in the book again.'); return; }
 
-  var audio=new Audio();
   var audioUrl=API+'/api/voice/'+encodeURIComponent(token)+'/audio';
-  var loaded=false, loading=false;
+  var btn, hint, progress, times, bar;
 
-  // Cross-origin <audio> streaming stalls through the host's proxy, so we
-  // fetch the (small) clip as a blob — which works cross-origin — and play it
-  // locally. First tap downloads it; after that playback is instant.
-  async function ensureLoaded(){
-    if(loaded) return true;
-    if(loading) return false;
-    loading=true; hint.textContent='Loading…';
-    try{
-      var resp=await fetch(audioUrl);
-      if(!resp.ok) throw new Error('http '+resp.status);
-      var blob=await resp.blob();
-      audio.src=URL.createObjectURL(blob);
-      loaded=true; loading=false; return true;
-    }catch(e){
-      loading=false;
-      hint.textContent='Sorry — this recording could not be loaded. Check your connection and tap to try again.';
-      return false;
-    }
-  }
+  // --- Web Audio engine -----------------------------------------------------
+  // HTMLAudioElement won't load MediaRecorder .webm files (stays readyState 0)
+  // even though the audio decodes fine, so we fetch the clip and decode it
+  // ourselves. Works for both .webm (desktop) and .m4a (phone) recordings.
+  var ctx=null, buffer=null, loading=false, decoded=false;
+  var source=null, startedAt=0, pausedAt=0, playing=false, raf=null, manualStop=false;
 
   fetch(API+'/api/voice/'+encodeURIComponent(token))
     .then(function(r){ if(!r.ok) throw new Error('notfound'); return r.json(); })
     .then(function(d){
       el('loading').style.display='none';
       el('content').style.display='block';
-      if(d.personName){
-        el('name').textContent=d.personName;
-        el('title').innerHTML='Hear <span class="name">'+escapeHtml(d.personName)+'</span><br>in their own voice';
-        document.title=d.personName+' — In Their Own Voice';
-      } else {
-        el('title').innerHTML='Hear them<br>in their own voice';
-      }
-      if(d.label){ var l=el('label'); l.textContent='“'+d.label+'”'; l.style.display='block'; }
-      el('playbtn').disabled=false;
+      if(d.personName){ el('title').innerHTML='Hear <span class="name">'+escapeHtml(d.personName)+'</span><br>in their own voice'; document.title=d.personName+' \u2014 In Their Own Voice'; }
+      else { el('title').innerHTML='Hear them<br>in their own voice'; }
+      if(d.label){ var l=el('label'); l.textContent='\u201c'+d.label+'\u201d'; l.style.display='block'; }
+      wireUp();
     })
-    .catch(function(){
-      showError('We couldn’t find this voice recording. Please scan the QR code in the book again, or contact BCS Memory Box.');
-    });
+    .catch(function(){ showError('We couldn\u2019t find this voice recording. Please scan the QR code in the book again, or contact BCS Memory Box.'); });
 
-  var btn=el('playbtn'), progress=el('progress'), times=el('times'), bar=el('bar'), hint=el('hint');
+  function wireUp(){
+    btn=el('playbtn'); hint=el('hint'); progress=el('progress'); times=el('times'); bar=el('bar');
+    btn.disabled=false;
+    btn.addEventListener('click', onTap);
+  }
 
-  btn.addEventListener('click', async function(){
-    if(!loaded){
-      var ok=await ensureLoaded();
-      if(ok){ try{ await audio.play(); }catch(e){ hint.textContent='Tap play once more to start.'; } }
-      return;
-    }
-    if(audio.paused){ try{ await audio.play(); }catch(e){} } else { audio.pause(); }
-  });
+  async function onTap(){
+    if(!ctx){ try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ hint.textContent='Your browser can\u2019t play audio.'; return; } }
+    if(ctx.state==='suspended'){ try{ await ctx.resume(); }catch(e){} }
+    if(!decoded){ var ok=await ensureDecoded(); if(ok){ startPlayback(0); } return; }
+    if(playing){ pausePlayback(); } else { startPlayback(pausedAt>=buffer.duration?0:pausedAt); }
+  }
 
-  audio.addEventListener('playing', function(){
-    btn.classList.add('playing'); btn.setAttribute('aria-label','Pause recording');
-    hint.textContent='Playing…'; progress.style.display='block'; times.style.display='flex';
-  });
-  audio.addEventListener('pause', function(){
-    btn.classList.remove('playing'); btn.setAttribute('aria-label','Play recording');
-    if(!audio.ended) hint.textContent='Paused — tap to continue';
-  });
-  audio.addEventListener('ended', function(){
-    btn.classList.remove('playing'); hint.textContent='Tap to play again';
-    bar.style.width='0%'; el('cur').textContent='0:00';
-  });
-  audio.addEventListener('waiting', function(){ hint.textContent='Loading…'; });
-  audio.addEventListener('loadedmetadata', function(){ el('dur').textContent=fmt(audio.duration); });
-  audio.addEventListener('timeupdate', function(){
-    if(audio.duration){ bar.style.width=(audio.currentTime/audio.duration*100)+'%'; el('cur').textContent=fmt(audio.currentTime); }
-  });
-  audio.addEventListener('error', function(){ hint.textContent='Sorry — this recording could not be played.'; });
+  async function ensureDecoded(){
+    if(decoded) return true;
+    if(loading) return false;
+    loading=true; hint.textContent='Loading\u2026';
+    try{
+      var r=await fetch(audioUrl,{cache:'force-cache'});
+      if(!r.ok) throw new Error('http');
+      var ab=await r.arrayBuffer();
+      buffer=await ctx.decodeAudioData(ab);
+      decoded=true; loading=false;
+      progress.style.display='block'; times.style.display='flex';
+      el('dur').textContent=fmt(buffer.duration);
+      return true;
+    }catch(e){ loading=false; hint.textContent='Sorry \u2014 this recording could not be loaded. Check your connection and tap to try again.'; return false; }
+  }
 
-  function escapeHtml(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+  function startPlayback(offset){
+    source=ctx.createBufferSource(); source.buffer=buffer; source.connect(ctx.destination);
+    source.onended=onEnded;
+    startedAt=ctx.currentTime-offset;
+    manualStop=false;
+    source.start(0, offset);
+    playing=true;
+    btn.classList.add('playing'); btn.setAttribute('aria-label','Pause recording'); hint.textContent='Playing\u2026';
+    tick();
+  }
+  function pausePlayback(){
+    pausedAt=ctx.currentTime-startedAt;
+    manualStop=true;
+    try{ source.stop(); }catch(e){}
+    source=null; playing=false;
+    if(raf) cancelAnimationFrame(raf);
+    btn.classList.remove('playing'); btn.setAttribute('aria-label','Play recording'); hint.textContent='Paused \u2014 tap to continue';
+  }
+  function onEnded(){
+    if(manualStop){ manualStop=false; return; }
+    playing=false; if(raf) cancelAnimationFrame(raf);
+    pausedAt=0; bar.style.width='0%'; el('cur').textContent='0:00';
+    btn.classList.remove('playing'); btn.setAttribute('aria-label','Play recording'); hint.textContent='Tap to play again';
+  }
+  function tick(){
+    if(!playing) return;
+    var cur=ctx.currentTime-startedAt; if(cur>buffer.duration) cur=buffer.duration;
+    bar.style.width=(cur/buffer.duration*100)+'%'; el('cur').textContent=fmt(cur);
+    raf=requestAnimationFrame(tick);
+  }
 })();
 </script>
 </body>
