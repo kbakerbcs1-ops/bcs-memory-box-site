@@ -140,7 +140,7 @@
         '<button class="primary btn-lg" id="beginBtn">Let’s warm up →</button>';
       document.getElementById('hearBtn').onclick=function(){ playClip('welcome'); };
       document.getElementById('beginBtn').onclick=function(){ idx=1; render(); };
-      setTimeout(function(){ playClip('welcome'); }, 300);
+      // (welcome stays silent on load; plays only if the person taps “Hear this”)
       return;
     }
     if(s.type==='closing'){
