@@ -483,6 +483,22 @@ function renderError(msg) {
       localStorage.setItem('bcs_story_name', (data.customer.name || '').split(' ')[0] || '');
     } catch (e) { /* private mode / storage off — non-fatal, email fallback still works */ }
 
+    // First-run onboarding: send a brand-new paying customer into the guided
+    // warm-up ONCE, so nobody stalls on a blank page. Fully guarded against loops:
+    //  - only when status is 'recording' AND they have zero recordings,
+    //  - skipped if the URL already carries ?warmup= (set when returning from it),
+    //  - skipped if this device already did it (localStorage flag).
+    // Anyone who has recorded anything (incl. finishing the warm-up) falls through.
+    try {
+      var _warmupParam = new URLSearchParams(window.location.search).get('warmup');
+      var _isBrandNew = data.customer.status === 'recording' && (data.recordings || []).length === 0;
+      var _warmupDone = false; try { _warmupDone = !!localStorage.getItem('bcs_warmup_done'); } catch (e2) {}
+      if (_isBrandNew && !_warmupParam && !_warmupDone) {
+        window.location.replace('first-session.html?token=' + encodeURIComponent(token));
+        return;
+      }
+    } catch (e3) { /* if anything is off, just show the normal story page */ }
+
     // Pick the renderer based on status
     var status = data.customer.status;
     var html;

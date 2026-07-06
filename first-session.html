@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your First Story — BCS Memory Box</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="bcs-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --brown:#8b5a2b; --brown-dk:#6f4720; --cream:#fbf7ef; --card:#ffffff;
+    --ink:#2a2520; --muted:#6f6357; --maroon:#5a1a1a; --line:#e8dfc9; --rec:#c0392b; }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ font-family:'Open Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+    background:linear-gradient(180deg,#fbf7ef 0%,#f3ead6 100%);
+    color:var(--ink); min-height:100vh; padding:20px; display:flex; align-items:center; justify-content:center; }
+  .wrap{width:100%; max-width:620px;}
+  .topbar{display:flex;justify-content:flex-end;margin-bottom:10px;}
+  .skiplink{background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;text-decoration:underline;}
+  .skiplink:hover{color:var(--brown);}
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:20px;
+    box-shadow:0 12px 40px rgba(90,40,20,0.10); padding:38px 32px; text-align:center; }
+  .logo{width:70px;height:70px;object-fit:contain;margin:0 auto 16px;display:block;}
+  .screen[hidden]{display:none;}
+  .kicker{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--brown);font-weight:700;margin-bottom:14px;}
+  .warmtag{display:inline-block;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--maroon);
+    font-weight:700;background:#f4ead3;border:1px solid #e6d3ad;border-radius:20px;padding:5px 14px;margin-bottom:14px;}
+  h1{font-family:'Merriweather',Georgia,serif;font-weight:700;color:var(--ink);line-height:1.3;}
+  .welcome h1{font-size:28px;margin-bottom:16px;}
+  .welcome p{font-size:19px;line-height:1.6;color:#3a332c;margin-bottom:16px;}
+  .sig{font-family:'Merriweather',serif;font-style:italic;color:var(--brown-dk);font-size:18px;}
+  .progress{font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--brown);font-weight:700;margin-bottom:18px;}
+  .question{font-size:26px;line-height:1.4;margin-bottom:8px;min-height:2.2em;display:flex;align-items:center;justify-content:center;}
+  .hear{background:none;border:none;color:var(--brown);font-size:16px;font-weight:600;cursor:pointer;padding:8px;margin-bottom:8px;}
+  .hear:hover{text-decoration:underline;}
+  #recordArea{margin:20px 0 8px;}
+  .recbtn{ width:130px;height:130px;border-radius:50%;border:none;cursor:pointer;margin:0 auto;
+    background:radial-gradient(circle at 35% 30%,#a56b34,#6f4720); box-shadow:0 8px 22px rgba(111,71,32,0.38);
+    display:flex;align-items:center;justify-content:center;transition:transform .1s;-webkit-tap-highlight-color:transparent; }
+  .recbtn:active{transform:scale(0.96);}
+  .recbtn svg{width:56px;height:56px;fill:#fff;}
+  .recbtn.rec{background:radial-gradient(circle at 35% 30%,#e05545,#a5271a);animation:pulse 1.1s infinite;}
+  .recbtn.rec svg{display:none;}
+  .recbtn.rec::after{content:'';width:44px;height:44px;background:#fff;border-radius:8px;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(192,57,43,.45);}70%{box-shadow:0 0 0 22px rgba(192,57,43,0);}100%{box-shadow:0 0 0 0 rgba(192,57,43,0);}}
+  .rechint{font-size:19px;color:var(--ink);margin-top:16px;font-weight:600;min-height:1.4em;}
+  .timer{font-size:22px;color:var(--brown);margin-top:10px;font-weight:bold;display:none;}
+  .savedbox{margin:10px 0;}
+  .saved-label{font-size:18px;color:#2a7a2a;font-weight:700;margin-bottom:10px;}
+  .answer-play{background:var(--brown);color:#fff;border:none;border-radius:40px;font-size:18px;font-weight:600;padding:12px 26px;cursor:pointer;}
+  .answer-play:hover{background:var(--brown-dk);}
+  .status{margin-top:12px;color:#5a4a3a;font-size:15px;min-height:1.2em;}
+  .reassure{font-size:16px;color:var(--muted);line-height:1.6;margin:20px auto 0;max-width:460px;font-style:italic;}
+  .nav{display:flex;justify-content:space-between;align-items:center;margin-top:24px;gap:12px;}
+  .ghost{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:10px 12px;}
+  .ghost:hover{color:var(--brown);text-decoration:underline;}
+  .primary{background:var(--brown);color:#fff;border:none;border-radius:40px;font-size:19px;font-weight:700;padding:14px 34px;cursor:pointer;box-shadow:0 4px 14px rgba(111,71,32,.28);}
+  .primary:hover{background:var(--brown-dk);}
+  .primary:disabled{background:#c9bfae;box-shadow:none;cursor:default;}
+  .nav-right{display:flex;gap:12px;align-items:center;}
+  .btn-lg{display:inline-block;margin-top:8px;}
+  .foot{margin-top:22px;font-size:14px;color:var(--muted);}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar"><button class="skiplink" id="skipAll">Skip to my story page &rarr;</button></div>
+    <div class="card" id="card">
+      <img class="logo" src="bcs-logo.png" alt="BCS Memory Box">
+      <div id="body"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+  function qs(k){ return new URLSearchParams(window.location.search).get(k); }
+  var TOKEN = qs('token');
+  try { localStorage.setItem('bcs_warmup_done','1'); } catch(e){}
+
+  var STEPS = [
+    { type:'welcome', file:'welcome' },
+    { type:'q', file:'q1', title:'Warm-up — name and hometown',
+      text:"Let's start easy. Just say hello — tell me your name, and where you're from." },
+    { type:'q', file:'q2', title:'Warm-up — the house I grew up in',
+      text:"Tell me about the house you grew up in. What do you see when you walk through the front door?" },
+    { type:'q', file:'q3', title:'Warm-up — who I looked up to',
+      text:"Who did you look up to most when you were young — and what did they teach you?" },
+    { type:'q', file:'q4', title:'Warm-up — a moment life changed',
+      text:"Tell me about a moment when you knew your life was about to change." },
+    { type:'q', file:'q5', title:'Warm-up — a story my family loves',
+      text:"What's a story your family always asks you to tell?" },
+    { type:'q', file:'q6', title:'Warm-up — dreams, and where life led',
+      text:"What did you dream of becoming as a child — and where did life actually take you?" },
+    { type:'q', file:'q7', title:'Warm-up — one thing for my grandchildren',
+      text:"If your grandchildren could hear just one thing from you, what would you want them to know?" },
+    { type:'open', file:'yourturn', title:'My story — first telling',
+      text:"Now — what's a story you want to tell?" },
+    { type:'closing', file:'closing' }
+  ];
+  var NUM_WARMUP = 7;
+  var qnum = (function(){ var n=0; return STEPS.map(function(s){ return s.type==='q' ? (++n) : null; }); })();
+
+  var idx = 0, saved = {}, clip = null;
+  var mediaRecorder=null, stream=null, chunks=[], recording=false, uploading=false, seconds=0, timerInt=null;
+  var body = document.getElementById('body');
+
+  function storyUrl(mode){ return 'yourstory.html?token=' + encodeURIComponent(TOKEN||'') + '&warmup=' + (mode||'done'); }
+  document.getElementById('skipAll').onclick = function(){ goStory('skip'); };
+  function goStory(mode){ stopClip(); window.location.href = storyUrl(mode); }
+
+  function stopClip(){ if(clip){ try{clip.pause();}catch(e){} clip=null; } }
+  function playClip(name){ stopClip(); try{ clip=new Audio('first-session-audio/'+name+'.mp3'); clip.play().catch(function(){}); }catch(e){} }
+
+  if(!TOKEN){
+    body.innerHTML = '<div class="kicker">Your First Story</div><h1>Please use your own link.</h1>'+
+      '<p style="font-size:18px;line-height:1.6;margin:14px 0;">This page opens from the private link in your welcome email. '+
+      'Head to the homepage and tap <strong>Continue your story</strong>, or check your email for your link.</p>'+
+      '<a class="primary btn-lg" href="/" style="text-decoration:none;display:inline-block;">Go to the homepage</a>';
+    return;
+  }
+
+  var RECORD_SVG = '<svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12h-2z"/></svg>';
+
+  function fmt(s){ var m=Math.floor(s/60), x=s%60; return m+':'+(x<10?'0':'')+x; }
+
+  function render(){
+    stopClip(); recording=false;
+    var s = STEPS[idx];
+    if(s.type==='welcome'){
+      body.innerHTML =
+        '<div class="kicker">Your First Story</div>'+
+        '<div class="warmtag">A gentle warm-up</div>'+
+        '<h1 class="welcome">First, a little warm-up.</h1>'+
+        '<div class="welcome"><p>Before your real story begins, let’s warm up with a few easy questions — just to get comfortable hearing your own voice. They’re only examples. <strong>Your real story is yours</strong>: your people, your moments, whatever matters most.</p>'+
+        '<p>Each answer you record is <strong>saved to your story</strong>. There’s no script, and no wrong answers.</p>'+
+        '<p class="sig">Whenever you’re ready — just press the button. — Ken</p></div>'+
+        '<button class="hear" id="hearBtn">🔊 Hear this</button><br>'+
+        '<button class="primary btn-lg" id="beginBtn">Let’s warm up →</button>';
+      document.getElementById('hearBtn').onclick=function(){ playClip('welcome'); };
+      document.getElementById('beginBtn').onclick=function(){ idx=1; render(); };
+      setTimeout(function(){ playClip('welcome'); }, 300);
+      return;
+    }
+    if(s.type==='closing'){
+      body.innerHTML =
+        '<div class="kicker">Your turn now</div>'+
+        '<h1>Whenever you’re ready.</h1>'+
+        '<p style="font-size:19px;line-height:1.6;margin:14px 0;">Your story is yours to tell — in your very own voice. Everything you recorded is saved and waiting on your story page, where you can add as much as you like.</p>'+
+        '<button class="hear" id="hearBtn">🔊 Hear this</button><br>'+
+        '<button class="primary btn-lg" id="goBtn">Go to my story page →</button>'+
+        '<div class="foot">Preserving life stories, in the voices that lived them.</div>';
+      document.getElementById('hearBtn').onclick=function(){ playClip('closing'); };
+      document.getElementById('goBtn').onclick=function(){ goStory('done'); };
+      setTimeout(function(){ playClip('closing'); }, 300);
+      return;
+    }
+    // question or open step
+    var isOpen = (s.type==='open');
+    var already = saved[idx];
+    body.innerHTML =
+      '<div class="progress">'+(isOpen?'Your turn':('Warm-up · '+qnum[idx]+' of '+NUM_WARMUP))+'</div>'+
+      '<h1 class="question">'+s.text+'</h1>'+
+      '<button class="hear" id="hearBtn">🔊 Hear the question again</button>'+
+      '<div id="recordArea">'+
+        '<button id="recBtn" class="recbtn" aria-label="Press to record">'+RECORD_SVG+'</button>'+
+        '<div class="timer" id="timer">0:00</div>'+
+        '<div class="rechint" id="hint">Press the button and just talk</div>'+
+      '</div>'+
+      '<div class="savedbox" id="savedbox" hidden>'+
+        '<div class="saved-label">✓ Saved to your story.</div>'+
+        '<button class="answer-play" id="playBtn">▶ Hear what I said</button>'+
+      '</div>'+
+      '<div class="status" id="status"></div>'+
+      '<div class="reassure">'+(isOpen
+          ? "This one’s all yours — take as long as you like. There’s no wrong answer."
+          : "Just a warm-up prompt — answer however you like, or skip. Your real story is yours to tell.")+'</div>'+
+      '<div class="nav">'+
+        '<button class="ghost" id="backBtn">'+(idx<=1?'← Start over':'← Back')+'</button>'+
+        '<div class="nav-right">'+
+          '<button class="ghost" id="skipBtn">Skip</button>'+
+          '<button class="primary" id="nextBtn"'+(already?'':' disabled')+'>'+(isOpen?'Finish →':'Next →')+'</button>'+
+        '</div>'+
+      '</div>';
+    document.getElementById('hearBtn').onclick=function(){ playClip(s.file); };
+    document.getElementById('recBtn').onclick=toggleRecord;
+    document.getElementById('backBtn').onclick=function(){ if(uploading) return; if(idx<=1){ idx=0; } else { idx--; } render(); };
+    document.getElementById('skipBtn').onclick=function(){ if(uploading) return; goNext(); };
+    document.getElementById('nextBtn').onclick=function(){ if(uploading) return; goNext(); };
+    if(already){ showSaved(already); }
+    setTimeout(function(){ playClip(s.file); }, 320);
+  }
+
+  function goNext(){ stopClip(); if(idx>=STEPS.length-1){ return; } idx++; render(); }
+
+  function showSaved(blobUrl){
+    var sb=document.getElementById('savedbox'); if(!sb) return;
+    document.getElementById('recordArea').style.display='none';
+    sb.hidden=false;
+    var pb=document.getElementById('playBtn');
+    pb.onclick=function(){ stopClip(); var a=new Audio(blobUrl); a.play().catch(function(){}); };
+    var nb=document.getElementById('nextBtn'); if(nb) nb.disabled=false;
+  }
+
+  async function toggleRecord(){
+    var recBtn=document.getElementById('recBtn'), hint=document.getElementById('hint'), timer=document.getElementById('timer');
+    if(recording){ // STOP
+      if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
+      recording=false; if(timerInt){clearInterval(timerInt);timerInt=null;}
+      recBtn.className='recbtn'; hint.textContent='One moment…'; return;
+    }
+    stopClip();
+    try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ hint.textContent='Please allow microphone access, then press the button again. (You can also skip.)'; return; }
+    chunks=[];
+    var types=['audio/mp4','audio/webm;codecs=opus','audio/webm'], mime='';
+    for(var i=0;i<types.length;i++){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])){ mime=types[i]; break; } }
+    mediaRecorder = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream);
+    mediaRecorder.ondataavailable=function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop=function(){
+      var blob=new Blob(chunks,{type:(mediaRecorder.mimeType||'audio/webm')});
+      if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; }
+      uploadAnswer(blob);
+    };
+    mediaRecorder.start(); recording=true;
+    seconds=0; timer.style.display='block'; timer.textContent='0:00';
+    timerInt=setInterval(function(){ seconds++; timer.textContent=fmt(seconds); },1000);
+    recBtn.className='recbtn rec'; hint.textContent='● Recording… tap when you’re finished';
+  }
+
+  async function uploadAnswer(blob){
+    var s=STEPS[idx];
+    var status=document.getElementById('status');
+    var recArea=document.getElementById('recordArea');
+    uploading=true; window.__bcsRecording=false;
+    if(recArea) recArea.style.display='none';
+    status.textContent='Saving your answer… (the first one can take a moment)';
+    var mime=blob.type||'audio/webm';
+    var ext = mime.indexOf('mp4')!==-1 ? 'm4a' : (mime.indexOf('ogg')!==-1 ? 'ogg' : 'webm');
+    var fname = (s.title||('Warm-up '+Date.now())) + '.' + ext;
+    var fd=new FormData(); fd.append('audio', blob, fname);
+    try{
+      var resp=await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(TOKEN), { method:'POST', body:fd });
+      var data=await resp.json();
+      if(!resp.ok || !data.ok){ throw new Error(data.error || ('Save failed (status '+resp.status+')')); }
+      uploading=false;
+      saved[idx]=URL.createObjectURL(blob);
+      status.textContent='';
+      showSaved(saved[idx]);
+    }catch(err){
+      uploading=false;
+      if(recArea) recArea.style.display='';
+      var recBtn=document.getElementById('recBtn'); if(recBtn){ recBtn.className='recbtn'; }
+      var hint=document.getElementById('hint'); if(hint){ hint.textContent='Press the button and just talk'; }
+      status.innerHTML='<strong style="color:#c0392b;">That didn’t save — please try again, or press Skip.</strong>';
+    }
+  }
+
+  window.addEventListener('beforeunload', function(e){ if(recording || uploading){ e.preventDefault(); e.returnValue=''; return ''; } });
+
+  render();
+})();
+</script>
+</body>
+</html>
