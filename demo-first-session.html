@@ -33,6 +33,8 @@
   .screen{display:block;}
   .screen[hidden]{display:none;}
   .kicker{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--brown);font-weight:700;margin-bottom:14px;}
+  .warmtag{display:inline-block;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--maroon);
+    font-weight:700;background:#f4ead3;border:1px solid #e6d3ad;border-radius:20px;padding:5px 14px;margin-bottom:14px;}
   h1{font-family:'Merriweather',Georgia,serif;font-weight:700;color:var(--ink);line-height:1.3;}
   .welcome h1{font-size:28px;margin-bottom:16px;}
   .welcome p{font-size:19px;line-height:1.6;color:#3a332c;margin-bottom:16px;}
@@ -69,7 +71,7 @@
   .answer-play:hover{background:var(--brown-dk);}
   .answer-actions{margin-top:14px;}
 
-  .reassure{font-size:16px;color:var(--muted);line-height:1.6;margin:22px auto 0;max-width:460px;}
+  .reassure{font-size:16px;color:var(--muted);line-height:1.6;margin:22px auto 0;max-width:460px;font-style:italic;}
   .nav{display:flex;justify-content:space-between;align-items:center;margin-top:26px;gap:12px;}
   .ghost{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:10px 12px;}
   .ghost:hover{color:var(--brown);text-decoration:underline;}
@@ -95,11 +97,13 @@
       <!-- WELCOME -->
       <section id="welcome" class="screen welcome">
         <div class="kicker">Your First Story</div>
-        <h1>Take your time — this is easy.</h1>
-        <p>I'm just going to ask you a few simple questions, the kind you'd answer at your kitchen table. There's nothing to prepare, and there are no wrong answers.</p>
-        <p>You can have each question <strong>read aloud</strong>, and you can <strong>hear yourself</strong> after you answer. We'll start with something easy.</p>
+        <div class="warmtag">A gentle warm-up</div>
+        <h1>First, a little warm-up.</h1>
+        <p>These questions are just to help you get comfortable hearing your own voice — they're only examples. <strong>Your real story is yours</strong>: your people, your moments, whatever matters most to you.</p>
+        <p>There's no script, and no wrong answers. You can have each question <strong>read aloud</strong>, and <strong>hear yourself</strong> after you answer.</p>
         <p class="sig">Whenever you're ready — just press the button. — Ken</p>
-        <button id="beginBtn" class="primary btn-lg">Let's begin &rarr;</button>
+        <button id="hearWelcomeBtn" class="hear">🔊 Hear this</button><br>
+        <button id="beginBtn" class="primary btn-lg">Let's warm up &rarr;</button>
       </section>
 
       <!-- PROMPT (reused for every question) -->
@@ -123,7 +127,7 @@
           </div>
         </div>
 
-        <div class="reassure">No rush, and there are no wrong answers — just talk the way you would at your kitchen table. You can redo it as many times as you like.</div>
+        <div class="reassure" id="reassure">Just a warm-up prompt — answer however you like, or skip. Your real story is yours to tell.</div>
 
         <div class="nav">
           <button id="backBtn" class="ghost">&larr; Back</button>
@@ -136,9 +140,9 @@
 
       <!-- DONE -->
       <section id="done" class="screen done" hidden>
-        <div class="kicker">That's the idea</div>
-        <h1>See how easy that was?</h1>
-        <p>That's all there is to it — just answering a few friendly questions, in your own voice and your own time.</p>
+        <div class="kicker">Your turn now</div>
+        <h1>Whenever you're ready.</h1>
+        <p>Your story is yours to tell — in your very own voice. The people, the places, and the moments your family will treasure forever.</p>
         <p>In the real Memory Box, everything you say is <strong>saved automatically</strong>, and we turn all your stories into a beautiful finished memoir — in your own words, in your own voice.</p>
         <p class="sig">Thank you for giving it a try. — Ken</p>
         <button id="restartBtn" class="primary btn-lg">Try it again</button>
@@ -149,24 +153,30 @@
 
 <script>
 (function(){
-  // Warm arc: easy warm-up → place → people → turning point → the story they love → dreams → legacy.
+  // Warm arc: easy warm-up -> place -> people -> turning point -> the story they love -> dreams -> legacy -> your turn.
+  var WELCOME_TEXT = "Before we begin your story, let's warm up with a few easy questions. These are only examples. Your real story is yours. There's no script, and no wrong answers.";
+  var CLOSING_TEXT = "Your story is yours to tell, in your very own voice. The people, the moments your family will treasure. Whenever you're ready, we'll begin.";
   var QUESTIONS = [
-    { practice:true,
-      text:"Let's warm up. Just say hello — tell me your name, and where you're from.",
-      voice:"Let's warm up. Just say hello, and tell me your name, and where you're from." },
-    { text:"Tell me about the house you grew up in. What do you see when you walk through the front door?" },
-    { text:"Who did you look up to most when you were young — and what did they teach you?" },
-    { text:"Tell me about a moment when you knew your life was about to change." },
-    { text:"What's a story your family always asks you to tell?" },
-    { text:"What did you dream of becoming as a child — and where did life actually take you?" },
-    { text:"If your grandchildren could hear just one thing from you, what would you want them to know?" }
+    { practice:true, audio:"q1",
+      text:"Let's start easy. Just say hello — tell me your name, and where you're from.",
+      voice:"Let's start easy. Just say hello, and tell me your name, and where you're from." },
+    { audio:"q2", text:"Tell me about the house you grew up in. What do you see when you walk through the front door?" },
+    { audio:"q3", text:"Who did you look up to most when you were young — and what did they teach you?" },
+    { audio:"q4", text:"Tell me about a moment when you knew your life was about to change." },
+    { audio:"q5", text:"What's a story your family always asks you to tell?" },
+    { audio:"q6", text:"What did you dream of becoming as a child — and where did life actually take you?" },
+    { audio:"q7", text:"If your grandchildren could hear just one thing from you, what would you want them to know?" },
+    { open:true, audio:"yourturn",
+      text:"Now — what's a story you want to tell?",
+      voice:"That was just a warm-up, and you're a natural. Now it's your turn. What's a story you want to tell?" }
   ];
+  var NUM_WARMUP = 7; // the 7 warm-up prompts (the 8th step is the open "your turn")
 
   var idx=-1, answers={}, mediaStream=null, recorder=null, chunks=[], currentBlob=null;
-  var audioCtx=null, playingSrc=null, recording=false;
+  var audioCtx=null, playingSrc=null, recording=false, clipAudio=null;
   var $=function(id){return document.getElementById(id);};
 
-  // ---- spoken questions (browser voice) ----
+  // ---- spoken questions: Victoria clips, with browser voice as a fallback ----
   var preferredVoice=null;
   function pickVoice(){
     if(!('speechSynthesis' in window)) return;
@@ -176,29 +186,42 @@
   }
   if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
   function speak(t){
-    if(!('speechSynthesis' in window)) return;
+    if(!('speechSynthesis' in window) || !t) return;
     speechSynthesis.cancel();
     var u=new SpeechSynthesisUtterance(t);
     if(preferredVoice) u.voice=preferredVoice;
-    u.rate=0.92; u.pitch=1.0;
+    u.rate=0.9; u.pitch=1.0;
     speechSynthesis.speak(u);
+  }
+  function stopClip(){ if(clipAudio){ try{clipAudio.pause();}catch(e){} clipAudio=null; } }
+  function playClip(name, fallbackText){
+    stopClip();
+    if('speechSynthesis' in window) speechSynthesis.cancel();
+    try{
+      clipAudio = new Audio('first-session-audio/'+name+'.mp3');
+      clipAudio.onerror=function(){ speak(fallbackText); };
+      var p=clipAudio.play();
+      if(p && p.catch) p.catch(function(){ speak(fallbackText); });
+    }catch(e){ speak(fallbackText); }
   }
 
   function show(id){ ['welcome','prompt','done'].forEach(function(s){ $(s).hidden=(s!==id); }); }
 
   function renderPrompt(){
-    stopPlayback(); recording=false;
+    stopPlayback(); stopClip(); recording=false;
     var q=QUESTIONS[idx];
     show('prompt');
-    $('progress').textContent = q.practice ? 'Warm-up' : ('Question '+idx+' of '+(QUESTIONS.length-1));
+    $('progress').textContent = q.open ? 'Your turn' : ('Warm-up · '+(idx+1)+' of '+NUM_WARMUP);
     $('question').textContent = q.text;
+    $('reassure').textContent = q.open
+      ? "This one's all yours — take as long as you like. There's no wrong answer."
+      : "Just a warm-up prompt — answer however you like, or skip. Your real story is yours to tell.";
     $('recBtn').className='recbtn';
     $('recHint').textContent='Press the button and just talk';
     $('nextBtn').textContent = (idx===QUESTIONS.length-1) ? 'Finish →' : 'Next →';
     $('backBtn').textContent = (idx===0) ? '← Start over' : '← Back';
     currentBlob = answers[idx] || null;
     if(currentBlob){
-      // already answered — show the playback state so nothing is lost on the way back
       $('recordArea').hidden=true;
       $('answer').hidden=false;
       $('nextBtn').hidden=false;
@@ -207,7 +230,7 @@
       $('recordArea').hidden=false;
       $('answer').hidden=true;
       $('nextBtn').hidden=true;
-      setTimeout(function(){ speak(q.voice||q.text); }, 450);
+      setTimeout(function(){ playClip(q.audio, q.voice||q.text); }, 450);
     }
   }
 
@@ -222,7 +245,7 @@
   async function toggleRecord(){
     if(recording){ stopRecord(); return; }
     var ok=await ensureMic(); if(!ok) return;
-    speechSynthesis.cancel();
+    stopClip(); if('speechSynthesis' in window) speechSynthesis.cancel();
     chunks=[];
     var mime = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : '';
     recorder = mime ? new MediaRecorder(mediaStream,{mimeType:mime}) : new MediaRecorder(mediaStream);
@@ -253,7 +276,7 @@
   function stopPlayback(){ if(playingSrc){ try{playingSrc.stop();}catch(e){} playingSrc=null; } }
   async function playAnswer(){
     if(!currentBlob) return;
-    stopPlayback();
+    stopPlayback(); stopClip();
     var ctx=getCtx(); if(ctx.state==='suspended'){ try{ await ctx.resume(); }catch(e){} }
     try{
       var ab=await currentBlob.arrayBuffer();
@@ -266,21 +289,22 @@
   }
 
   function back(){
-    stopPlayback(); if('speechSynthesis' in window) speechSynthesis.cancel();
+    stopPlayback(); stopClip(); if('speechSynthesis' in window) speechSynthesis.cancel();
     if(idx<=0){ show('welcome'); return; }
     idx--; renderPrompt();
   }
 
   function next(){
-    stopPlayback(); if('speechSynthesis' in window) speechSynthesis.cancel();
-    if(idx>=QUESTIONS.length-1){ show('done'); return; }
+    stopPlayback(); stopClip(); if('speechSynthesis' in window) speechSynthesis.cancel();
+    if(idx>=QUESTIONS.length-1){ show('done'); setTimeout(function(){ playClip('closing', CLOSING_TEXT); }, 400); return; }
     idx++; renderPrompt();
   }
 
   document.addEventListener('DOMContentLoaded',function(){
-    $('beginBtn').onclick=function(){ getCtx(); idx=0; renderPrompt(); };
+    $('hearWelcomeBtn').onclick=function(){ getCtx(); playClip('welcome', WELCOME_TEXT); };
+    $('beginBtn').onclick=function(){ getCtx(); stopClip(); idx=0; renderPrompt(); };
     $('recBtn').onclick=toggleRecord;
-    $('hearBtn').onclick=function(){ var q=QUESTIONS[idx]; speak(q.voice||q.text); };
+    $('hearBtn').onclick=function(){ var q=QUESTIONS[idx]; playClip(q.audio, q.voice||q.text); };
     $('playAnswerBtn').onclick=function(){ if(playingSrc){ stopPlayback(); $('playAnswerBtn').textContent='▶ Hear what I said'; } else { playAnswer(); } };
     $('rerecordBtn').onclick=function(){ $('answer').hidden=true; $('recordArea').hidden=false; $('nextBtn').hidden=true; $('recBtn').className='recbtn'; $('recHint').textContent='Press the button and just talk'; };
     $('backBtn').onclick=back;
