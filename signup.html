@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Get Started — BCS Memory Box</title>
-<meta name="description" content="Start your memoir — from $175. Choose your package and record your life story in your own voice.">
+<meta name="description" content="Start your memoir — from $299. Choose your package and record your life story in your own voice.">
 
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -57,13 +57,9 @@
 
     <div id="plan-picker" style="margin:6px 0 18px;">
       <p style="font-weight:bold;color:#5a4a3a;margin-bottom:10px;">Choose your package:</p>
-      <label class="plan-opt" data-plan="story" style="display:block;border:2px solid #d4cab5;border-radius:8px;padding:12px 14px;margin-bottom:10px;cursor:pointer;">
-        <input type="radio" name="plan" value="story"> <b>Digital Keepsake — $175</b>
-        <div style="font-size:14px;color:#5a4a3a;margin:4px 0 0 24px;">Your finished digital memoir · photos free · two revisions</div>
-      </label>
       <label class="plan-opt" data-plan="hardcover" style="display:block;border:2px solid #d4cab5;border-radius:8px;padding:12px 14px;margin-bottom:10px;cursor:pointer;">
-        <input type="radio" name="plan" value="hardcover"> <b>Hardcover Memoir — $299</b> <span style="color:#8b5a2b;font-weight:bold;font-size:13px;">· Most popular</span>
-        <div style="font-size:14px;color:#5a4a3a;margin:4px 0 0 24px;">Everything above, plus a printed hardcover book (one copy included)</div>
+        <input type="radio" name="plan" value="hardcover" checked> <b>Hardcover Memoir — $299</b> <span style="color:#8b5a2b;font-weight:bold;font-size:13px;">· Most popular</span>
+        <div style="font-size:14px;color:#5a4a3a;margin:4px 0 0 24px;">Your finished memoir, photos free, two revisions — plus a printed hardcover book (one copy included)</div>
       </label>
       <label class="plan-opt" data-plan="legacy" style="display:block;border:2px solid #d4cab5;border-radius:8px;padding:12px 14px;margin-bottom:6px;cursor:pointer;">
         <input type="radio" name="plan" value="legacy"> <b>Family Legacy — $499</b>
@@ -123,7 +119,7 @@
 
     try {
       var planEl = document.querySelector('input[name="plan"]:checked');
-      var plan = planEl ? planEl.value : 'story';
+      var plan = planEl ? planEl.value : 'hardcover';
       var resp = await fetch(API_BASE + '/api/customer/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,7 +168,7 @@
     return div.innerHTML;
   }
 
-  // Preselect the package from the ?plan= link, default to Digital Keepsake, and highlight the choice.
+  // Preselect the package from the ?plan= link, default to Hardcover Memoir, and highlight the choice.
   (function(){
     function hl(){
       document.querySelectorAll('.plan-opt').forEach(function(l){
@@ -182,8 +178,8 @@
       });
     }
     var params = new URLSearchParams(window.location.search);
-    var want = (params.get('plan') || 'story').toLowerCase();
-    var pick = document.querySelector('input[name="plan"][value="' + want + '"]') || document.querySelector('input[name="plan"][value="story"]');
+    var want = (params.get('plan') || 'hardcover').toLowerCase();
+    var pick = document.querySelector('input[name="plan"][value="' + want + '"]') || document.querySelector('input[name="plan"][value="hardcover"]');
     if (pick) pick.checked = true;
     document.querySelectorAll('input[name="plan"]').forEach(function(r){ r.addEventListener('change', hl); });
     hl();
