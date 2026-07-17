@@ -4,6 +4,7 @@
 const express = require('express');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
+const { runCleanupPipeline, emailAdminDraftReady } = require('../lib/cleanup');
 
 const router = express.Router();
 router.use(express.json());
@@ -125,6 +126,12 @@ router.get('/me', async (req, res) => {
       [customer.id]
     );
 
+    const { rows: followUps } = await db.query(
+      `SELECT id, question, sort_order, (answer_recording_id IS NOT NULL) AS answered
+       FROM follow_up_questions WHERE customer_id = $1 ORDER BY sort_order ASC`,
+      [customer.id]
+    );
+
     res.json({
       ok: true,
       customer: {
@@ -138,6 +145,7 @@ router.get('/me', async (req, res) => {
       recordings,
       photos,
       drafts,
+      followUps,
     });
   } catch (err) {
     console.error('[customer/me] error:', err);
@@ -485,6 +493,61 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/finish-follow-ups?token=<access_token>
+// The storyteller has recorded their answers to the follow-up questions and is
+// done. Re-run the pipeline: their spoken answers get transcribed and woven in,
+// producing the richer final draft. Returns immediately.
+// ---------------------------------------------------------------------------
+router.post('/finish-follow-ups', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const customer = await db.queryOne(
+      'SELECT id, status FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+    if (customer.status === 'processing') {
+      return res.json({ ok: true, alreadyProcessing: true, message: 'Your book is already being finished.' });
+    }
+    runCleanupPipeline(customer.id).catch(function (err) { console.error('[finish-follow-ups] pipeline crashed:', err); });
+    res.json({ ok: true, message: "Thank you! We're weaving your answers in now — we'll email you when your book is ready." });
+  } catch (err) {
+    console.error('[customer/finish-follow-ups] error:', err);
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/skip-follow-ups?token=<access_token>
+// The storyteller would rather finish the book as-is. We keep the first draft,
+// mark the follow-up round done, flip to draft_ready, and notify Ken.
+// ---------------------------------------------------------------------------
+router.post('/skip-follow-ups', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const customer = await db.queryOne(
+      'SELECT id, email, name, access_token FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const draft = await db.queryOne(
+      `SELECT id FROM drafts WHERE customer_id = $1 ORDER BY version DESC, created_at DESC LIMIT 1`,
+      [customer.id]
+    );
+    await db.query("UPDATE customers SET status = 'draft_ready', follow_up_done = TRUE WHERE id = $1", [customer.id]);
+    if (draft) { try { await emailAdminDraftReady(customer, draft.id); } catch (e) { console.error('[skip-follow-ups] could not email Ken:', e.message); } }
+
+    res.json({ ok: true, message: 'Your book is finished and on its way to review.' });
+  } catch (err) {
+    console.error('[customer/skip-follow-ups] error:', err);
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
+  }
+});
 
 module.exports = router;
 

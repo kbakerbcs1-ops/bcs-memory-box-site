@@ -80,7 +80,7 @@ const MEMOIR_SYSTEM_PROMPT = [
 // ----------------------------------------------------------------------------
 async function runCleanupPipeline(customerId) {
   const customer = await db.queryOne(
-    'SELECT id, email, name, access_token FROM customers WHERE id = $1',
+    'SELECT id, email, name, access_token, follow_up_done FROM customers WHERE id = $1',
     [customerId]
   );
   if (!customer) throw new Error('Customer not found: ' + customerId);
@@ -124,10 +124,24 @@ async function runCleanupPipeline(customerId) {
 
     // 3. Polish via Claude
     console.log('[cleanup] Calling Claude to organize and polish');
-    const combined = recordings.map((r, i) =>
+    // Follow-up ANSWER recordings are handled separately (woven in as Q&A), so
+    // keep them OUT of the main transcript stream.
+    const { rows: fqRows } = await db.query(
+      'SELECT id, question, sort_order, answer_recording_id FROM follow_up_questions WHERE customer_id = $1 ORDER BY sort_order ASC',
+      [customerId]
+    );
+    const recById = {}; recordings.forEach(function (r) { recById[r.id] = r; });
+    const answerRecIds = new Set(fqRows.filter(function (q) { return q.answer_recording_id; }).map(function (q) { return q.answer_recording_id; }));
+    const mainRecordings = recordings.filter(function (r) { return !answerRecIds.has(r.id); });
+    const combined = mainRecordings.map((r, i) =>
       '[RECORDING ' + (i + 1) + ' — ' + (r.original_filename || 'untitled') + ']\n' +
       (r.transcript || '(no transcript)')
     ).join('\n\n');
+    // Q&A pairs the storyteller has already answered (question + spoken answer transcript).
+    const answeredQA = fqRows
+      .filter(function (q) { return q.answer_recording_id && recById[q.answer_recording_id]; })
+      .map(function (q) { return { question: q.question, answer: (recById[q.answer_recording_id].transcript || '').trim() }; })
+      .filter(function (qa) { return qa.answer; });
     // Gather the customer's photographs (metadata + bytes) so they can be
     // placed inside the memoir alongside the stories they belong to.
     const { rows: photoRows } = await db.query(
@@ -160,7 +174,7 @@ async function runCleanupPipeline(customerId) {
     }
     console.log('[cleanup] Loaded ' + photos.length + ' photo(s) for placement');
 
-    const memoirMarkdown = await polishWithClaude(customer.name, combined, photos);
+    const memoirMarkdown = await polishWithClaude(customer.name, combined, photos, answeredQA);
 
     // 4. Render to .docx (with photos placed inline)
     console.log('[cleanup] Rendering .docx');
@@ -187,10 +201,28 @@ async function runCleanupPipeline(customerId) {
       [customerId, memoirMarkdown, docxKey]
     );
 
-    // 7. Flip customer status
-    await db.query("UPDATE customers SET status = 'draft_ready' WHERE id = $1", [customerId]);
+    // 7. FIRST DRAFT ONLY: ask the storyteller a few gentle follow-up questions
+    //    to enrich thin stories, then pause for their spoken answers. On the
+    //    re-run (answers present) or if they skipped, we finalize instead.
+    if (!customer.follow_up_done && answeredQA.length === 0) {
+      let questions = [];
+      try { questions = await generateFollowUpQuestions(combined, memoirMarkdown); }
+      catch (e) { console.error('[cleanup] follow-up question generation failed: ' + e.message); }
+      if (questions.length > 0) {
+        for (let i = 0; i < questions.length; i++) {
+          await db.query('INSERT INTO follow_up_questions (customer_id, question, sort_order) VALUES ($1, $2, $3)', [customerId, questions[i], i]);
+        }
+        await db.query("UPDATE customers SET status = 'follow_up' WHERE id = $1", [customerId]);
+        try { await emailCustomerFollowUp(customer); }
+        catch (e) { console.error('[cleanup] could not email customer follow-up: ' + e.message); }
+        console.log('[cleanup] First draft done; generated ' + questions.length + ' follow-up question(s), awaiting answers.');
+        return draft.id; // stop here — draft saved but not delivered until they answer or skip
+      }
+      // no questions worth asking -> fall through and finalize
+    }
 
-    // 8. Notify Ken
+    // 8. FINALIZE: draft is ready for Ken.
+    await db.query("UPDATE customers SET status = 'draft_ready', follow_up_done = TRUE WHERE id = $1", [customerId]);
     await emailAdminDraftReady(customer, draft.id);
 
     console.log('[cleanup] Pipeline complete for ' + customer.name + ' — draft ' + draft.id);
@@ -253,8 +285,9 @@ async function transcribeFromR2(storageKey) {
 // ----------------------------------------------------------------------------
 // Send the combined transcripts to Claude, receive memoir Markdown.
 // ----------------------------------------------------------------------------
-async function polishWithClaude(customerName, combinedTranscripts, photos) {
+async function polishWithClaude(customerName, combinedTranscripts, photos, answeredQA) {
   photos = photos || [];
+  answeredQA = answeredQA || [];
   let photoBlock = '';
   if (photos.length) {
     photoBlock =
@@ -267,10 +300,16 @@ async function polishWithClaude(customerName, combinedTranscripts, photos) {
       "PHOTOS:\n" +
       photos.map(function (p, i) { return "Photo " + (i + 1) + ": " + (p.caption || '(no caption)'); }).join('\n');
   }
+  let qaBlock = '';
+  if (answeredQA.length) {
+    qaBlock =
+      "\n\n----\n\nAFTER a first draft, the storyteller was asked a few follow-up questions and gave these SPOKEN answers. Weave each answer into the relevant part of the story, in their own words, exactly like the rest of the memoir. Do NOT add a question-and-answer section, and follow the same firm rule: use only what they actually said.\n\n" +
+      answeredQA.map(function (qa, i) { return "Follow-up " + (i + 1) + "\nQuestion we asked: " + qa.question + "\nTheir spoken answer: " + qa.answer; }).join("\n\n");
+  }
   const userMsg =
     "Storyteller's name: " + customerName + "\n\n" +
     "Here are the transcripts of their recordings. Organize and polish them into the memoir per the rules above:\n\n" +
-    combinedTranscripts + photoBlock;
+    combinedTranscripts + qaBlock + photoBlock;
 
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -570,8 +609,67 @@ async function checkStuckCustomers() {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Follow-up questions: read the transcripts + the first draft, and propose a
+// few gentle spoken-style questions that would draw out richer detail. Strictly
+// about things they already mentioned; never new topics or genealogy.
+// ----------------------------------------------------------------------------
+const FOLLOWUP_SYSTEM_PROMPT = [
+"You help enrich a senior's memoir. You are given everything the storyteller recorded and the draft memoir we wrote from it. Find the few places where a story is THIN - mentioned only in passing, or where one warm follow-up question would draw out a richer memory the family would treasure.",
+"Write UP TO FOUR follow-up questions, addressed directly to the storyteller ('you'), in simple, warm, spoken language - the way a grandchild might ask across the kitchen table. Each question must invite a specific memory or detail they ALREADY touched on. Never introduce a brand-new topic they did not mention. Never ask for names, dates, or genealogy (those are handled elsewhere).",
+"If the memoir is already rich and complete, it is perfectly fine to return FEWER questions, or NONE. Quality over quantity - only ask what would genuinely make the book better.",
+"Return ONLY the questions, one per line. No numbering, no bullet points, no preamble, no closing remarks. If there are no good questions to ask, return nothing at all.",
+].join("\n");
+
+async function generateFollowUpQuestions(combinedTranscripts, draftMarkdown) {
+  const userMsg =
+    "Here is everything the storyteller recorded:\n\n" + combinedTranscripts +
+    "\n\n----\n\nHere is the draft memoir we wrote from it:\n\n" + draftMarkdown;
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1024,
+      system: FOLLOWUP_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude API error (follow-ups): ' + await resp.text());
+  const data = await resp.json();
+  const text = (data.content || []).map(function (b) { return b.text || ''; }).join('');
+  return text
+    .split('\n')
+    .map(function (line) { return line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim(); })
+    .filter(function (line) { return line.length > 0; })
+    .slice(0, 4);
+}
+
+// Invite the customer to answer their follow-up questions (spoken), enriching
+// their book. Links them back to their story page.
+async function emailCustomerFollowUp(customer) {
+  const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(customer.access_token);
+  const subject = 'A few quick questions to make your story even richer';
+  const html =
+    '<div style="font-family:Georgia,serif;color:#2a2520;max-width:560px;">' +
+    '<p>Hi ' + (customer.name || 'there') + ',</p>' +
+    '<p>Your first draft is written — and it is coming along beautifully. Before we finish it, we have <strong>a few short questions</strong> that would draw out a little more of your story and make the book even richer.</p>' +
+    '<p>They take just a couple of minutes, and you answer them <strong>the same easy way — just talking</strong>, right on your story page:</p>' +
+    '<p style="text-align:center;margin:24px 0;"><a href="' + portalUrl + '" style="background:#8b5a2b;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold;">Answer a few questions</a></p>' +
+    '<p style="color:#5a4a3a;font-size:14px;">Prefer to skip them? That is fine too — there is a button on that page to finish your book as it is.</p>' +
+    '<p style="color:#5a4a3a;">— BCS Memory Box</p>' +
+    '</div>';
+  return sendEmail(customer.email, subject, html);
+}
+
 module.exports = {
   runCleanupPipeline,
+  generateFollowUpQuestions,
+  emailAdminDraftReady,
   checkStuckCustomers,
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer

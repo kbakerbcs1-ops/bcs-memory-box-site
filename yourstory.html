@@ -505,6 +505,7 @@ function renderError(msg) {
     if (status === 'awaiting_payment') html = renderAwaitingPayment(data.customer);
     else if (status === 'recording')   html = renderRecordingPage(data);
     else if (status === 'processing')  html = renderProcessing(data.customer);
+    else if (status === 'follow_up')   html = renderFollowUp(data);
     else if (status === 'draft_ready') html = renderDraftReady(data.customer, (data.photos||[]).length);
     else if (status === 'delivered')   html = renderDelivered(data.customer, (data.photos||[]).length);
     else if (status === 'error')              html = renderErrorState(data.customer);
@@ -517,6 +518,7 @@ function renderError(msg) {
     // uploader, the I'm done button, and the revision form.
     bindUploadHandler();
     bindRecordHandler();
+    bindFollowUpHandlers();
     bindPhotoHandler();
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
@@ -1076,6 +1078,120 @@ function bindPhotoDrop() {
     } catch (err) {
       if (st) { st.textContent = 'Could not read that photo. Try the Add a photo button instead.'; st.style.color = '#c0392b'; }
     }
+  });
+}
+
+
+// ===========================================================================
+// FOLLOW-UP QUESTIONS view: after the first draft, the storyteller answers a
+// few gentle questions BY VOICE to enrich their book (or skips).
+// ===========================================================================
+function fuEsc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+function renderFollowUp(data){
+  var qs = (data && data.followUps) || [];
+  var html = renderStatusBar('processing');
+  html += '<div class="card">';
+  html += '<div class="eyebrow">Almost there</div>';
+  html += '<h1>A few quick questions to make your story even richer.</h1>';
+  html += '<p>Your first draft is written — and it’s coming along beautifully. These few questions will help draw out a little more. Answer each one just by <strong>talking</strong>, the same easy way as before. Take your time, and skip any you’d rather not answer.</p>';
+  if (!qs.length) html += '<p class="muted">No questions to show right now.</p>';
+  qs.forEach(function(q, i){
+    html += '<div class="followup-q" style="border:1px solid #e8dfc9;border-radius:10px;padding:16px 18px;margin:14px 0;">';
+    html += '<p style="font-size:18px;color:#2a2520;margin:0 0 10px;"><strong>' + (i+1) + '.</strong> ' + fuEsc(q.question) + '</p>';
+    if (q.answered) html += '<p style="color:#2a5a2a;font-weight:bold;margin:0 0 8px;">✓ Answered — you can re-record if you like.</p>';
+    html += '<button class="btn fu-rec" data-qid="' + q.id + '">● ' + (q.answered ? 'Re-record answer' : 'Record answer') + '</button>';
+    html += '<span class="fu-timer" style="margin-left:12px;color:#8b5a2b;font-weight:bold;display:none;">0:00</span>';
+    html += '<p class="fu-msg" style="margin-top:8px;color:#5a4a3a;font-size:14px;"></p>';
+    html += '</div>';
+  });
+  html += '<hr style="border:none;border-top:1px solid #e8dfc9;margin:22px 0;">';
+  html += '<button class="btn btn-large" id="fu-finish">I’m done — finish my book</button>';
+  html += '<p id="fu-finish-status" class="muted" style="text-align:center;font-size:13px;margin-top:8px;"></p>';
+  html += '<p style="text-align:center;margin-top:10px;"><a href="#" id="fu-skip" style="color:#8b5a2b;">Skip these and finish my book as it is</a></p>';
+  html += '</div>';
+  return html;
+}
+
+function bindFollowUpHandlers(){
+  var recBtns = document.querySelectorAll('.fu-rec');
+  if (!recBtns.length && !document.getElementById('fu-finish')) return;
+  var token = getToken();
+
+  recBtns.forEach(function(btn){
+    var qid = btn.getAttribute('data-qid');
+    var wrap = btn.parentNode;
+    var timerEl = wrap.querySelector('.fu-timer');
+    var msgEl = wrap.querySelector('.fu-msg');
+    var mediaRecorder = null, stream = null, chunks = [], seconds = 0, timer = null;
+
+    btn.addEventListener('click', async function(){
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+        catch (e) { msgEl.textContent = 'Couldn’t access your microphone. Please allow it in your browser, then try again.'; msgEl.style.color = '#c0392b'; return; }
+        chunks = [];
+        var types = ['audio/mp4','audio/webm;codecs=opus','audio/webm'], mime = '';
+        for (var i=0;i<types.length;i++){ if (window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) { mime = types[i]; break; } }
+        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+        mediaRecorder.onstop = async function(){
+          window.__bcsRecording = false;
+          if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+          var blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          var ext = (mediaRecorder.mimeType||'').indexOf('mp4') !== -1 ? 'm4a' : 'webm';
+          var fd = new FormData(); fd.append('audio', blob, 'answer-' + Date.now() + '.' + ext);
+          btn.style.display = 'none';
+          msgEl.textContent = 'Saving your answer…'; msgEl.style.color = '#5a4a3a';
+          try {
+            var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token) + '&question_id=' + encodeURIComponent(qid), { method: 'POST', body: fd });
+            var d = await resp.json();
+            if (!resp.ok || !d.ok) throw new Error(d.error || 'Save failed');
+            msgEl.innerHTML = '<strong style="color:#2a5a2a;">✓ Answer saved.</strong>';
+            btn.textContent = '● Re-record answer'; btn.style.display = '';
+          } catch (err) {
+            msgEl.innerHTML = '<strong style="color:#c0392b;">Didn’t save — tap the button to try again.</strong>';
+            btn.style.display = '';
+          }
+        };
+        mediaRecorder.start(); window.__bcsRecording = true;
+        seconds = 0; timerEl.style.display = 'inline'; timerEl.textContent = '0:00';
+        timer = setInterval(function(){ seconds++; var m = Math.floor(seconds/60), sec = seconds%60; timerEl.textContent = m + ':' + (sec<10?'0':'') + sec; }, 1000);
+        btn.textContent = '■ Stop'; msgEl.textContent = '';
+      } else if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop(); if (timer) clearInterval(timer); timerEl.style.display = 'none';
+      }
+    });
+  });
+
+  var finishBtn = document.getElementById('fu-finish');
+  var finishStatus = document.getElementById('fu-finish-status');
+  if (finishBtn) finishBtn.addEventListener('click', async function(){
+    if (window.__bcsRecording) { alert('You’re still recording — please press Stop first so your answer saves.'); return; }
+    var token2 = getToken(); if (!token2) return;
+    finishBtn.disabled = true; finishBtn.textContent = 'Finishing…';
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/finish-follow-ups?token=' + encodeURIComponent(token2), { method: 'POST' });
+      var d = await resp.json();
+      if (!resp.ok || !d.ok) throw new Error(d.error || 'Could not finish.');
+      finishStatus.textContent = 'Weaving your answers in… this page will update automatically.'; finishStatus.style.color = '#2a5a2a';
+      setTimeout(function(){ window.location.reload(); }, 1500);
+    } catch (err) {
+      finishStatus.textContent = 'Something went wrong: ' + (err.message || 'unknown'); finishStatus.style.color = '#c0392b';
+      finishBtn.disabled = false; finishBtn.textContent = 'I’m done — finish my book';
+    }
+  });
+
+  var skip = document.getElementById('fu-skip');
+  if (skip) skip.addEventListener('click', async function(e){
+    e.preventDefault();
+    if (!confirm('Finish your book as it is, without answering the extra questions?')) return;
+    var token3 = getToken(); if (!token3) return;
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/skip-follow-ups?token=' + encodeURIComponent(token3), { method: 'POST' });
+      var d = await resp.json();
+      if (!resp.ok || !d.ok) throw new Error(d.error || 'Could not skip.');
+      window.location.reload();
+    } catch (err) { alert('Something went wrong: ' + (err.message || 'unknown')); }
   });
 }
 

@@ -55,6 +55,18 @@ router.post('/', upload.single('audio'), async (req, res) => {
       [customer.id, storageKey, audio.originalname || 'recording', audio.size]
     );
 
+    // If this upload is answering a follow-up question, link it so the pipeline
+    // weaves the spoken answer into the story on the next run.
+    const questionId = req.query.question_id || req.body.question_id;
+    if (questionId) {
+      try {
+        await db.query(
+          "UPDATE follow_up_questions SET answer_recording_id = $1, answered_at = NOW() WHERE id = $2 AND customer_id = $3",
+          [recording.id, questionId, customer.id]
+        );
+      } catch (e) { console.error('[upload] could not link follow-up answer: ' + e.message); }
+    }
+
     res.json({ ok: true, recording });
   } catch (err) {
     console.error('[upload] error:', err);
