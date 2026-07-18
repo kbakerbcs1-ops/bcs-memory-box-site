@@ -90,7 +90,7 @@ app.use('/api/stripe/webhook', webhookRouter);
 app.get('/', (req, res) => res.json({
   status: 'ok',
   service: 'bcs-memory-box-portal',
-  version: '0.5.1',
+  version: '0.5.2',
   db: db.enabled,
   stripe: !!process.env.STRIPE_SECRET_KEY,
 }));
