@@ -398,7 +398,7 @@ router.post('/order-book', async (req, res) => {
       return res.status(400).json({ error: 'Please fill in your name and full shipping address.' });
     }
 
-    const priceNote = copies === 1 ? '$99' : ('$99 + ' + (copies - 1) + ' x $49 = $' + (99 + (copies - 1) * 49));
+    const priceNote = copies === 1 ? '$99' : (copies + ' x $99 = $' + (copies * 99));
     const subject = 'Hardcover book order from ' + (customer.name || shipName);
     const adminLink = 'https://www.bcsmemorybox.com/admin.html';
     const rows = [

@@ -249,7 +249,7 @@ function renderRecordingPage(data) {
   }
 
   // Four sections guide
-  html += '<h2 style="margin-top:32px;">The four sections to record</h2>';
+  html += '<h2 style="margin-top:32px;">Four things to talk about</h2>';
   html += '<div class="sections">' +
     '<div class="section-card"><h3>1. Family and Origins</h3><p>Your parents and grandparents. Names, dates, where they came from, what they did.</p></div>' +
     '<div class="section-card"><h3>2. Early Childhood</h3><p>Where you grew up, friends, school, the world you knew as a child.</p></div>' +
@@ -292,7 +292,7 @@ function renderRecordingPage(data) {
   // Upload zone — real, wired to /api/customer/upload
   html += '<div class="card">';
   html += '<h2>Add a recording</h2>';
-  html += '<div class="reassure"><strong>Relax and just talk.</strong> Every recording saves automatically \u2014 close this page anytime, then come back to the homepage and tap <strong>Continue your story</strong> to add more. Record your memories in any order, big or small. When you\u2019re done, I weave everything together into one smooth, flowing memoir across your four chapters. Nothing is lost, and nothing has to be perfect.</div>';
+  html += '<div class="reassure"><strong>Relax and just talk.</strong> Every recording saves automatically \u2014 close this page anytime, then come back to the homepage and tap <strong>Continue your story</strong> to add more. Record your memories in any order, big or small. When you\u2019re done, I weave everything together into one smooth, flowing memoir shaped to fit your life. Nothing is lost, and nothing has to be perfect.</div>';
   html += '<div class="upload-zone">' +
     '<p style="font-size:18px;color:#5a4a3a;">Press the button, tell your story, and press it again when you\'re done. We\'ll take care of the rest.</p>' +
     '<button class="btn btn-large" id="record-btn" style="margin:12px auto 0;">● Start recording</button>' +
@@ -942,7 +942,7 @@ function orderBookCard() {
   function field(id,label,ph){ return '<label style="'+lstyle+'">'+label+'</label><input type="text" id="'+id+'" placeholder="'+(ph||'')+'" style="'+istyle+'"/>'; }
   return '<div class="card">' +
     '<h2>Want a printed hardcover book?</h2>' +
-    '<p>Turn your memoir into a beautiful hardcover keepsake — <strong>$99</strong> for the first copy, <strong>$49</strong> for each additional. Tell us where to mail it and how many you would like, and Ken will personally confirm the details and payment with you.</p>' +
+    '<p>Turn your memoir into a beautiful hardcover keepsake — <strong>$99</strong> per copy. Tell us where to mail it and how many you would like, and Ken will personally confirm the details and payment with you.</p>' +
     '<button class="btn" id="orderbook-toggle">Order a hardcover book</button>' +
     '<div id="orderbook-form" style="display:none;margin-top:20px;text-align:left;max-width:520px;">' +
       field('ob-name','Send the book to (full name)','e.g. Ken Baker') +
