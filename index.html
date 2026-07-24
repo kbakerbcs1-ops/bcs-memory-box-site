@@ -414,6 +414,53 @@
 
 <main>
 
+<section class="try-free">
+    <div class="container">
+        <div class="section-eyebrow">Try it free — no payment, no signup</div>
+        <h2>Hear what 90 seconds of your story sounds like.</h2>
+        <p>Tell us one memory. We'll polish it and email it to your inbox in a couple minutes — a small preview of what your full memoir would look like.</p>
+
+        <div id="trial-widget" class="trial-widget">
+            <div id="trial-step-1">
+                <input type="text" id="trial-name" placeholder="Your first name (optional)" autocomplete="given-name" />
+                <input type="email" id="trial-email" placeholder="Your email address" autocomplete="email" required />
+                <button id="trial-start" class="trial-btn-large">Start recording</button>
+                <p class="trial-hint">Your browser may ask for microphone permission — click "Allow."</p>
+            </div>
+
+            <div id="trial-step-2" hidden>
+                <p class="trial-prompt">Tell us a memory — a person, a place, a moment that matters.</p>
+                <button id="trial-record" class="trial-record-btn" title="Tap to record">●</button>
+                <div id="trial-timer" class="trial-timer">0:00 / 1:30</div>
+                <p class="trial-hint">Up to 90 seconds. Tap the red button again to stop.</p>
+            </div>
+
+            <div id="trial-step-3" hidden>
+                <p>Sounds good? Send it to your inbox, or record again.</p>
+                <audio id="trial-preview" controls></audio>
+                <div class="trial-buttons-row">
+                    <button id="trial-redo" class="btn-secondary">Record again</button>
+                    <button id="trial-send" class="btn-primary">Send it to me</button>
+                </div>
+            </div>
+
+            <div id="trial-step-4" hidden>
+                <div class="trial-spinner"></div>
+                <p style="text-align:center;">Polishing your story — this takes about a minute. Don't close the page.</p>
+            </div>
+
+            <div id="trial-step-5" hidden>
+                <p class="trial-success">Your sample is on its way. Check your inbox in a couple minutes (look for an email from BCS Memory Box). Thank you for trying.</p>
+            </div>
+
+            <div id="trial-step-6" hidden>
+                <p class="trial-error" id="trial-error-msg">Something went wrong. Please try again.</p>
+                <button id="trial-retry" class="btn-secondary trial-btn-large">Start over</button>
+            </div>
+        </div>
+    </div>
+</section>
+
 <!-- WHY -->
 <section class="why">
     <div class="narrow glass">
@@ -555,52 +602,7 @@
 .trial-widget audio{width:100%;margin:16px 0;}
 </style>
 
-<section class="try-free">
-    <div class="container">
-        <div class="section-eyebrow">Try it free — no payment, no signup</div>
-        <h2>Hear what 90 seconds of your story sounds like.</h2>
-        <p>Tell us one memory. We'll polish it and email it to your inbox in a couple minutes — a small preview of what your full memoir would look like.</p>
 
-        <div id="trial-widget" class="trial-widget">
-            <div id="trial-step-1">
-                <input type="text" id="trial-name" placeholder="Your first name (optional)" autocomplete="given-name" />
-                <input type="email" id="trial-email" placeholder="Your email address" autocomplete="email" required />
-                <button id="trial-start" class="trial-btn-large">Start recording</button>
-                <p class="trial-hint">Your browser may ask for microphone permission — click "Allow."</p>
-            </div>
-
-            <div id="trial-step-2" hidden>
-                <p class="trial-prompt">Tell us a memory — a person, a place, a moment that matters.</p>
-                <button id="trial-record" class="trial-record-btn" title="Tap to record">●</button>
-                <div id="trial-timer" class="trial-timer">0:00 / 1:30</div>
-                <p class="trial-hint">Up to 90 seconds. Tap the red button again to stop.</p>
-            </div>
-
-            <div id="trial-step-3" hidden>
-                <p>Sounds good? Send it to your inbox, or record again.</p>
-                <audio id="trial-preview" controls></audio>
-                <div class="trial-buttons-row">
-                    <button id="trial-redo" class="btn-secondary">Record again</button>
-                    <button id="trial-send" class="btn-primary">Send it to me</button>
-                </div>
-            </div>
-
-            <div id="trial-step-4" hidden>
-                <div class="trial-spinner"></div>
-                <p style="text-align:center;">Polishing your story — this takes about a minute. Don't close the page.</p>
-            </div>
-
-            <div id="trial-step-5" hidden>
-                <p class="trial-success">Your sample is on its way. Check your inbox in a couple minutes (look for an email from BCS Memory Box). Thank you for trying.</p>
-            </div>
-
-            <div id="trial-step-6" hidden>
-                <p class="trial-error" id="trial-error-msg">Something went wrong. Please try again.</p>
-                <button id="trial-retry" class="btn-secondary trial-btn-large">Start over</button>
-            </div>
-        </div>
-    </div>
-</section>
 
 <script>
 (function(){
@@ -706,7 +708,7 @@
 <!-- FINAL CTA -->
 <section class="final-cta">
     <h2>Ready to start?</h2>
-    <p>Try the 90-second sample above to hear what your story will sound like polished. When you're ready, start Your Story (from $299) below — you'll create your account, then record at your own pace.</p>
+    <p>When you're ready, start Your Story below — you'll create your account, then record at your own pace.</p>
     <a href="/signup.html" class="btn-primary">Start Your Story — from $299</a>
     <p class="or-call">Questions first? Email me at <a href="mailto:kbakerbcs1@gmail.com">kbakerbcs1@gmail.com</a></p>
 </section>
