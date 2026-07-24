@@ -362,7 +362,42 @@ function renderProcessing(customer) {
     '</div>';
 }
 
-function renderDraftReady(customer, photoCount) {
+// Read-only "listen back" list of the customer's recordings. Shown on the
+// draft-ready and delivered pages so a customer can ALWAYS hear themselves,
+// not only while they are in the recording stage.
+function renderRecordingsPlayback(recordings) {
+  if (!recordings || recordings.length === 0) return '';
+  var html = '<div class="card">';
+  html += '<h2>Your recordings (' + recordings.length + ')</h2>';
+  html += '<p class="muted" style="font-size:14px;margin-top:-2px;">You can listen back to anything you recorded, anytime.</p>';
+  html += '<div class="recordings">';
+  recordings.forEach(function(r, idx) {
+    var displayTitle = (r.title && r.title.trim()) ? r.title : ('Recording ' + (idx + 1));
+    html += '<div class="recording-row">' +
+        '<div class="recording-info">' +
+          '<div class="recording-name"><span class="rt-text">' + escapeHtml(displayTitle) + '</span></div>' +
+          '<div class="recording-meta">' + formatDate(r.created_at) + ' \u00B7 ' + formatSize(r.size_bytes) + '</div>' +
+        '</div>' +
+      '</div>';
+    html += '<audio controls preload="none" style="display:block;width:100%;margin-top:6px;" src="' + API_BASE + '/api/customer/recording-audio?token=' + encodeURIComponent(getToken()) + '&id=' + encodeURIComponent(r.id) + '"></audio>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+// A card that lets a customer go back into recording mode to add more (or fix a
+// too-short recording). Uses the existing reopen-recording endpoint, which the
+// backend already accepts from the draft-ready and delivered states.
+function addMoreCard() {
+  return '<div class="card">' +
+    '<h2>Want to add more to your story?</h2>' +
+    '<p>If a recording came out too short, or you remembered something new, you can add more anytime \u2014 we\'ll fold it in and update your draft.</p>' +
+    '<button class="btn btn-secondary" onclick="reopenStory(this)">Add more to your story</button>' +
+    '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+  '</div>';
+}
+
+function renderDraftReady(customer, photoCount, recordings) {
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoNote = (photoCount > 0)
@@ -376,6 +411,8 @@ function renderDraftReady(customer, photoCount) {
       '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
       photoNote +
     '</div>' +
+    renderRecordingsPlayback(recordings) +
+    addMoreCard() +
     revisionRequestCard() + (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
 }
 
@@ -389,7 +426,7 @@ function revisionRequestCard() {
   '</div>';
 }
 
-function renderDelivered(customer, photoCount) {
+function renderDelivered(customer, photoCount, recordings) {
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoLine = (photoCount > 0)
@@ -403,6 +440,7 @@ function renderDelivered(customer, photoCount) {
       '<p>' + photoLine + '</p>' +
       '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your memoir (.docx)</a></p>' +
     '</div>' +
+    renderRecordingsPlayback(recordings) +
     '<div class="card">' +
       '<h2>Want to add more to your story?</h2>' +
       '<p>Remembered something new? You can keep adding recordings anytime &mdash; Ken will fold them into an updated memoir for you.</p>' +
@@ -506,8 +544,8 @@ function renderError(msg) {
     else if (status === 'recording')   html = renderRecordingPage(data);
     else if (status === 'processing')  html = renderProcessing(data.customer);
     else if (status === 'follow_up')   html = renderFollowUp(data);
-    else if (status === 'draft_ready') html = renderDraftReady(data.customer, (data.photos||[]).length);
-    else if (status === 'delivered')   html = renderDelivered(data.customer, (data.photos||[]).length);
+    else if (status === 'draft_ready') html = renderDraftReady(data.customer, (data.photos||[]).length, (data.recordings||[]));
+    else if (status === 'delivered')   html = renderDelivered(data.customer, (data.photos||[]).length, (data.recordings||[]));
     else if (status === 'error')              html = renderErrorState(data.customer);
     else if (status === 'revision_requested') html = renderRevisionRequested(data.customer);
     else html = renderError('Unknown status: ' + status);
