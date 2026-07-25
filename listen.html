@@ -104,36 +104,35 @@
 
   var btn=el('playbtn'), hint=el('hint'), progress=el('progress'), times=el('times'), bar=el('bar');
   btn.disabled=false;
-  hint.textContent='Loading…';
+  hint.textContent='Tap to play';
 
   // Native <audio> — plays on every device incl. iPhone/Safari, no decoding step.
+  // Load on tap (a user gesture), exactly like the homepage player.
   var audio=new Audio();
-  audio.preload='auto';
-  var stage='static', backendTries=0, ready=false;
+  audio.preload='none';
+  audio.src=STATIC;
+  var triedBackend=false, wantPlay=false, backendTries=0;
+
+  function tryPlay(){ var p=audio.play(); if(p&&p.catch) p.catch(function(){}); }
 
   btn.addEventListener('click', function(){
-    if(audio.paused){ var p=audio.play(); if(p&&p.catch) p.catch(function(){ hint.textContent='Tap the button once more to play.'; }); }
+    if(audio.paused){ wantPlay=true; hint.textContent='Loading…'; tryPlay(); }
     else { audio.pause(); }
   });
-  audio.addEventListener('loadedmetadata', function(){
-    ready=true; el('dur').textContent=fmt(audio.duration);
-    progress.style.display='block'; times.style.display='flex';
-    hint.textContent='Tap to play';
-  });
+  audio.addEventListener('loadedmetadata', function(){ el('dur').textContent=fmt(audio.duration); progress.style.display='block'; times.style.display='flex'; });
   audio.addEventListener('timeupdate', function(){ if(audio.duration){ bar.style.width=(audio.currentTime/audio.duration*100)+'%'; el('cur').textContent=fmt(audio.currentTime); } });
-  audio.addEventListener('playing', function(){ btn.classList.add('playing'); btn.setAttribute('aria-label','Pause recording'); hint.textContent='Playing…'; });
+  audio.addEventListener('playing', function(){ wantPlay=false; backendTries=0; btn.classList.add('playing'); btn.setAttribute('aria-label','Pause recording'); hint.textContent='Playing…'; });
   audio.addEventListener('pause', function(){ if(!audio.ended){ btn.classList.remove('playing'); btn.setAttribute('aria-label','Play recording'); hint.textContent='Paused — tap to continue'; } });
   audio.addEventListener('ended', function(){ btn.classList.remove('playing'); btn.setAttribute('aria-label','Play recording'); hint.textContent='Tap to play again'; bar.style.width='0%'; el('cur').textContent='0:00'; });
   audio.addEventListener('error', function(){
-    if(ready) return;
-    if(stage==='static'){ stage='backend'; hint.textContent='Waking up the recording — one moment…'; audio.src=BACKEND; audio.load(); return; }
-    backendTries++;
-    if(backendTries<=20){ hint.textContent='Waking up the recording — one moment…'; setTimeout(function(){ audio.load(); }, 4000); }
-    else { hint.textContent='Still waking up — tap the button once more in a moment.'; }
+    // static copy missing → fall back to the server (with patient retry)
+    if(!triedBackend){ triedBackend=true; audio.src=BACKEND; audio.load(); if(wantPlay){ hint.textContent='Waking up the recording — one moment…'; tryPlay(); } return; }
+    if(wantPlay){
+      backendTries++;
+      if(backendTries<=15){ hint.textContent='Waking up the recording — one moment…'; setTimeout(function(){ audio.load(); tryPlay(); }, 4000); }
+      else { hint.textContent='Still waking up — tap the button once more in a moment.'; }
+    }
   });
-
-  // Kick off loading: the instant static copy first.
-  audio.src=STATIC; audio.load();
 
   // Look up the name/label in the background — nice to have, never blocks audio.
   fetch(API+'/api/voice/'+encodeURIComponent(token))
