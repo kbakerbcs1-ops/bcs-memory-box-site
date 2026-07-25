@@ -391,9 +391,55 @@
         .video-modal-inner video{width:100%;border-radius:12px;display:block;box-shadow:0 12px 40px rgba(0,0,0,0.6);}
         .video-close{position:absolute;top:-46px;right:0;background:none;border:none;color:#fff;font-size:42px;line-height:1;cursor:pointer;}
         @media (max-width:1400px){.hero-side{position:static;left:auto;top:auto;width:300px;max-width:90%;margin:0 auto 32px;}}
+
+        /* ===== SLIM RECORD BAR (always visible at top) ===== */
+        html { scroll-padding-top: 66px; }
+        body { padding-top: 56px; }
+        .record-bar {
+            position: fixed; top: 0; left: 0; width: 100%; z-index: 500;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 16px; padding: 8px 22px; box-sizing: border-box;
+            background: rgba(115,12,34,0.97);
+            -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+            box-shadow: 0 2px 14px rgba(0,0,0,0.38);
+        }
+        .record-bar .rb-brand { display: flex; align-items: center; gap: 11px; text-decoration: none; }
+        .record-bar .rb-brand:hover { text-decoration: none; }
+        .record-bar .rb-brand img { width: 38px; height: 38px; border-radius: 7px; display: block; }
+        .record-bar .rb-brand b { font-family: 'Merriweather', Georgia, serif; font-size: 17px; color: #fff; font-weight: 700; letter-spacing: .01em; }
+        .record-bar .rb-btn {
+            background: var(--beige); color: #2a1f15;
+            font-family: 'Open Sans', sans-serif; font-weight: 700; font-size: 15px;
+            padding: 11px 22px; border-radius: 999px; text-decoration: none; white-space: nowrap;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.30); transition: transform .15s ease, background .15s ease;
+        }
+        .record-bar .rb-btn:hover { background: #fff; color: #2a1f15; transform: translateY(-1px); text-decoration: none; }
+        .record-bar .rb-btn .dot { color: #c0392b; margin-right: 7px; font-size: 13px; }
+        @media (max-width: 540px) {
+            .record-bar .rb-brand b { display: none; }
+            .record-bar .rb-btn { font-size: 14px; padding: 10px 16px; }
+        }
+
+        /* ===== TRY IT FREE POP-UP ===== */
+        .trial-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:1100;align-items:flex-start;justify-content:center;padding:44px 18px;overflow-y:auto;}
+        .trial-modal.open{display:flex;}
+        .trial-modal-inner{position:relative;background:#fff;border-radius:14px;width:min(94vw,560px);margin:auto;padding:30px 28px 32px;box-shadow:0 24px 70px rgba(0,0,0,0.55);}
+        .trial-modal-close{position:absolute;top:8px;right:14px;background:none;border:none;color:#8b5a2b;font-size:32px;line-height:1;cursor:pointer;}
+        .trial-modal-head h2{font-family:'Merriweather',Georgia,serif;color:#2a1f15;font-size:24px;margin:0 0 6px;text-shadow:none;}
+        .trial-modal-head p{color:#5a4a3a;font-size:16px;margin:0 0 18px;}
+        #trial-modal .trial-widget{background:transparent;box-shadow:none;padding:0;margin:0;}
     </style>
 </head>
 <body>
+
+<!-- SLIM RECORD BAR (always visible) -->
+<div class="record-bar">
+    <a class="rb-brand" href="#top" aria-label="BCS Memory Box home">
+        <img src="bcs-logo.png" alt="BCS Memory Box logo">
+        <b>BCS Memory Box</b>
+    </a>
+    <a class="rb-btn" href="#" onclick="openTrial();return false;"><span class="dot">&#9679;</span>Record 90 seconds — free</a>
+</div>
 
 <!-- HERO -->
 <header class="hero">
@@ -408,58 +454,54 @@
     <h1>BCS Memory Box</h1>
     <p class="subtitle">Preserving the stories that matter most</p>
     <p class="lead">A simple way to record your life story — in your own voice, for the people you love. Record at your own pace, on the phone, tablet, or computer you already own. No technology to learn.</p>
-    <a href="#trial-widget" class="btn-primary">Try It Free — Record 90 Seconds</a>
     <div class="scroll-cue">scroll to learn more ↓</div>
 </header>
 
 <main>
 
-<section class="try-free">
-    <div class="container">
-        <div class="section-eyebrow">Try it free — no payment, no signup</div>
-        <h2>Hear what 90 seconds of your story sounds like.</h2>
-        <p>Tell us one memory. We'll polish it and email it to your inbox in a couple minutes — a small preview of what your full memoir would look like.</p>
-
-        <div id="trial-widget" class="trial-widget">
-            <div id="trial-step-1">
-                <input type="text" id="trial-name" placeholder="Your first name (optional)" autocomplete="given-name" />
-                <input type="email" id="trial-email" placeholder="Your email address" autocomplete="email" required />
-                <button id="trial-start" class="trial-btn-large">Start recording</button>
-                <p class="trial-hint">Your browser may ask for microphone permission — click "Allow."</p>
-            </div>
-
-            <div id="trial-step-2" hidden>
-                <p class="trial-prompt">Tell us a memory — a person, a place, a moment that matters.</p>
-                <button id="trial-record" class="trial-record-btn" title="Tap to record">●</button>
-                <div id="trial-timer" class="trial-timer">0:00 / 1:30</div>
-                <p class="trial-hint">Up to 90 seconds. Tap the red button again to stop.</p>
-            </div>
-
-            <div id="trial-step-3" hidden>
-                <p>Sounds good? Send it to your inbox, or record again.</p>
-                <audio id="trial-preview" controls></audio>
-                <div class="trial-buttons-row">
-                    <button id="trial-redo" class="btn-secondary">Record again</button>
-                    <button id="trial-send" class="btn-primary">Send it to me</button>
-                </div>
-            </div>
-
-            <div id="trial-step-4" hidden>
-                <div class="trial-spinner"></div>
-                <p style="text-align:center;">Polishing your story — this takes about a minute. Don't close the page.</p>
-            </div>
-
-            <div id="trial-step-5" hidden>
-                <p class="trial-success">Your sample is on its way. Check your inbox in a couple minutes (look for an email from BCS Memory Box). Thank you for trying.</p>
-            </div>
-
-            <div id="trial-step-6" hidden>
-                <p class="trial-error" id="trial-error-msg">Something went wrong. Please try again.</p>
-                <button id="trial-retry" class="btn-secondary trial-btn-large">Start over</button>
+<!-- TRY IT FREE POP-UP -->
+<div id="trial-modal" class="trial-modal" onclick="closeTrial()">
+  <div class="trial-modal-inner" onclick="event.stopPropagation()">
+    <button class="trial-modal-close" onclick="closeTrial()" aria-label="Close">&times;</button>
+    <div class="trial-modal-head">
+      <h2>Hear 90 seconds of your story — free</h2>
+      <p>Tell me one memory. I'll polish it and email it to your inbox in a couple of minutes.</p>
+    </div>
+    <div id="trial-widget" class="trial-widget">
+        <div id="trial-step-1">
+            <input type="text" id="trial-name" placeholder="Your first name (optional)" autocomplete="given-name" />
+            <input type="email" id="trial-email" placeholder="Your email address" autocomplete="email" required />
+            <button id="trial-start" class="trial-btn-large">Start recording</button>
+            <p class="trial-hint">Your browser may ask for microphone permission — click "Allow."</p>
+        </div>
+        <div id="trial-step-2" hidden>
+            <p class="trial-prompt">Tell me a memory — a person, a place, a moment that matters.</p>
+            <button id="trial-record" class="trial-record-btn" title="Tap to record">●</button>
+            <div id="trial-timer" class="trial-timer">0:00 / 1:30</div>
+            <p class="trial-hint">Up to 90 seconds. Tap the red button again to stop.</p>
+        </div>
+        <div id="trial-step-3" hidden>
+            <p>Sounds good? Send it to your inbox, or record again.</p>
+            <audio id="trial-preview" controls></audio>
+            <div class="trial-buttons-row">
+                <button id="trial-redo" class="btn-secondary">Record again</button>
+                <button id="trial-send" class="btn-primary">Send it to me</button>
             </div>
         </div>
+        <div id="trial-step-4" hidden>
+            <div class="trial-spinner"></div>
+            <p style="text-align:center;">Polishing your story — this takes about a minute. Don't close the page.</p>
+        </div>
+        <div id="trial-step-5" hidden>
+            <p class="trial-success">Your sample is on its way. Check your inbox in a couple minutes (look for an email from BCS Memory Box). Thank you for trying.</p>
+        </div>
+        <div id="trial-step-6" hidden>
+            <p class="trial-error" id="trial-error-msg">Something went wrong. Please try again.</p>
+            <button id="trial-retry" class="btn-secondary trial-btn-large">Start over</button>
+        </div>
     </div>
-</section>
+  </div>
+</div>
 
 <!-- WHY -->
 <section class="why">
@@ -825,6 +867,11 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeVideo()
 </script>
 <script>
 function bcsTog(c,i){var el=document.getElementById(c),ic=document.getElementById(i),btn=ic.closest('button');var open=el.style.display!=='none';el.style.display=open?'none':'block';ic.style.transform=open?'rotate(0deg)':'rotate(180deg)';if(btn)btn.setAttribute('aria-expanded',String(!open));}
+</script>
+<script>
+function openTrial(){var m=document.getElementById('trial-modal');m.classList.add('open');document.body.style.overflow='hidden';setTimeout(function(){var el=document.getElementById('trial-name');if(el){try{el.focus({preventScroll:true});}catch(e){el.focus();}}},60);}
+function closeTrial(){var m=document.getElementById('trial-modal');m.classList.remove('open');document.body.style.overflow='';}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeTrial();});
 </script>
 </body>
 </html>
