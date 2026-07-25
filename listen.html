@@ -131,18 +131,27 @@
     if(decodeState==='loading'||decodeState==='ready') return;
     decodeState='loading';
     if(!makeCtx()){ decodeState='error'; return; }
-    try{
-      var r=await fetch(audioUrl); if(!r.ok) throw new Error('http '+r.status);
-      var ab=await r.arrayBuffer();
-      buffer=await ctx.decodeAudioData(ab);
-      decodeState='ready';
-      el('dur').textContent=fmt(buffer.duration);
-      progress.style.display='block'; times.style.display='flex';
-      if(playWhenReady){ playWhenReady=false; startPlayback(0); }
-    }catch(e){
-      decodeState='error';
-      hint.textContent='Sorry — this recording could not be loaded. Tap to try again.';
+    var deadline=Date.now()+90000, attempt=0;
+    while(Date.now()<deadline){
+      attempt++;
+      if(hint) hint.textContent = attempt===1 ? 'Loading…' : 'Waking up the recording — one moment…';
+      try{
+        var r=await fetch(audioUrl,{cache:'no-store'}); if(!r.ok) throw new Error('http '+r.status);
+        var ab=await r.arrayBuffer();
+        if(ab.byteLength<1000) throw new Error('not ready');
+        buffer=await ctx.decodeAudioData(ab);
+        decodeState='ready';
+        el('dur').textContent=fmt(buffer.duration);
+        progress.style.display='block'; times.style.display='flex';
+        if(hint) hint.textContent='Tap to play';
+        if(playWhenReady){ playWhenReady=false; startPlayback(0); }
+        return;
+      }catch(e){
+        await new Promise(function(res){ setTimeout(res,4000); });
+      }
     }
+    decodeState='error';
+    if(hint) hint.textContent='Still waking up — tap the button once more in a moment.';
   }
 
   async function onTap(){

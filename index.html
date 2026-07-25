@@ -168,6 +168,22 @@
             box-shadow: 0 8px 32px rgba(0,0,0,0.35);
         }
 
+        /* ===== VOICE KEEPSAKE ===== */
+        .voice-keepsake p { font-size: clamp(17px,1.8vw,20px); margin-bottom: 16px; }
+        .voice-keepsake .vk-invite { font-style: italic; color: var(--beige); margin-top: 22px; margin-bottom: 0; }
+        .vk-player { display:flex; align-items:center; gap:20px; margin-top:20px; background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:18px 20px; }
+        .vk-btn { flex:0 0 auto; width:74px; height:74px; border-radius:50%; border:none; cursor:pointer; background:radial-gradient(circle at 35% 30%,#a56b34,#6f4720); box-shadow:0 8px 22px rgba(111,71,32,0.4); display:flex; align-items:center; justify-content:center; transition:transform .12s ease; -webkit-tap-highlight-color:transparent; }
+        .vk-btn:active { transform:scale(0.95); }
+        .vk-btn svg { width:30px; height:30px; fill:#fff; }
+        .vk-btn.playing svg.ic-play { display:none; }
+        .vk-btn:not(.playing) svg.ic-pause { display:none; }
+        .vk-info { flex:1; text-align:left; min-width:0; }
+        .vk-name { font-family:'Merriweather',Georgia,serif; font-size:19px; color:#fff; }
+        .vk-label { font-style:italic; color:var(--beige); font-size:15px; margin-top:2px; }
+        .vk-bar { height:6px; background:rgba(255,255,255,0.18); border-radius:6px; margin-top:12px; overflow:hidden; }
+        .vk-bar > i { display:block; height:100%; width:0; background:var(--beige); border-radius:6px; transition:width .12s linear; }
+        .vk-hint { font-size:13.5px; color:var(--beige); margin-top:8px; min-height:16px; opacity:.9; }
+
         /* ===== WHY ===== */
         .why p {
             font-size: clamp(17px, 1.8vw, 20px);
@@ -556,6 +572,74 @@
         <p class="pricing-note">You record one section at a time, in your own time, on your phone, tablet, or computer. Send me the recordings — I clean them up into polished prose with grammar, spelling, and flow. Your story takes shape section by section. No interview, no schedule, no rush.</p>
     </div>
 </section>
+
+<!-- HEAR THEIR VOICE -->
+<section class="voice-keepsake">
+    <div class="narrow glass">
+        <div class="section-eyebrow">Their actual voice, kept forever</div>
+        <h2>You don't just read it — you hear it.</h2>
+        <p>Inside every book is a small QR code. Scan it, and the story plays in their <em>own voice</em> — the laugh, the pause, the warmth. Years from now, a grandchild can still hear them tell it.</p>
+        <p class="vk-invite">Here's a real one — my own message to my family. Tap to listen:</p>
+        <div class="vk-player">
+            <button class="vk-btn" id="vkBtn" aria-label="Play recording">
+                <svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg class="ic-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+            </button>
+            <div class="vk-info">
+                <div class="vk-name">Ken Baker</div>
+                <div class="vk-label">&ldquo;A message to my family&rdquo;</div>
+                <div class="vk-bar"><i id="vkBar"></i></div>
+                <div class="vk-hint" id="vkHint">Tap to hear my voice</div>
+            </div>
+        </div>
+    </div>
+</section>
+<script>
+(function(){
+  var AUDIO='voice-sample.m4a';
+  var btn=document.getElementById('vkBtn'), bar=document.getElementById('vkBar'), hint=document.getElementById('vkHint');
+  if(!btn) return;
+  var ctx=null, buffer=null, state='idle', src=null, startedAt=0, pausedAt=0, playing=false, raf=null, manualStop=false, playWhenReady=false;
+  function mk(){ if(!ctx){ try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ctx=null; } } return ctx; }
+  async function load(){
+    if(state==='loading'||state==='ready') return;
+    state='loading'; if(!mk()){ state='error'; return; }
+    var deadline=Date.now()+90000, attempt=0;
+    while(Date.now()<deadline){
+      attempt++;
+      hint.textContent = attempt===1 ? 'Loading my voice…' : 'Waking up the recording — one moment…';
+      try{
+        var r=await fetch(AUDIO,{cache:'no-store'});
+        if(!r.ok) throw new Error('http '+r.status);
+        var ab=await r.arrayBuffer();
+        if(ab.byteLength<1000) throw new Error('not ready');
+        buffer=await ctx.decodeAudioData(ab);
+        state='ready'; hint.textContent='';
+        if(playWhenReady){ playWhenReady=false; play(0); }
+        return;
+      }catch(e){
+        await new Promise(function(res){ setTimeout(res,4000); });
+      }
+    }
+    state='error'; hint.textContent='Could not play the sample. Please refresh and try again.';
+  }
+  function play(off){
+    if(ctx.state==='suspended') ctx.resume();
+    src=ctx.createBufferSource(); src.buffer=buffer; src.connect(ctx.destination); src.onended=ended;
+    startedAt=ctx.currentTime-off; manualStop=false; src.start(0,off); playing=true;
+    btn.classList.add('playing'); hint.textContent='Playing…'; tick();
+  }
+  function pause(){ pausedAt=ctx.currentTime-startedAt; manualStop=true; try{ src.stop(); }catch(e){} src=null; playing=false; if(raf) cancelAnimationFrame(raf); btn.classList.remove('playing'); hint.textContent='Paused — tap to continue'; }
+  function ended(){ if(manualStop){ manualStop=false; return; } playing=false; if(raf) cancelAnimationFrame(raf); pausedAt=0; bar.style.width='0%'; btn.classList.remove('playing'); hint.textContent='Tap to play again'; }
+  function tick(){ if(!playing) return; var c=ctx.currentTime-startedAt; if(c>buffer.duration) c=buffer.duration; bar.style.width=(c/buffer.duration*100)+'%'; raf=requestAnimationFrame(tick); }
+  btn.addEventListener('click', async function(){
+    mk(); if(ctx && ctx.state==='suspended'){ try{ await ctx.resume(); }catch(e){} }
+    if(state==='error'){ load(); return; }
+    if(state!=='ready'){ playWhenReady=true; load(); return; }
+    if(playing) pause(); else play(pausedAt>=buffer.duration?0:pausedAt);
+  });
+})();
+</script>
 
 <!-- PRICING -->
 <section>
