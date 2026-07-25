@@ -581,6 +581,7 @@
         <p>Inside every book is a small QR code. Scan it, and the story plays in their <em>own voice</em> — the laugh, the pause, the warmth. Years from now, a grandchild can still hear them tell it.</p>
         <p class="vk-invite">Here's a real one — my own message to my family. Tap to listen:</p>
         <div class="vk-player">
+            <audio id="vkAudio" src="voice-sample.m4a" preload="none"></audio>
             <button class="vk-btn" id="vkBtn" aria-label="Play recording">
                 <svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                 <svg class="ic-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
@@ -596,48 +597,22 @@
 </section>
 <script>
 (function(){
-  var AUDIO='voice-sample.m4a';
+  var audio=document.getElementById('vkAudio');
   var btn=document.getElementById('vkBtn'), bar=document.getElementById('vkBar'), hint=document.getElementById('vkHint');
-  if(!btn) return;
-  var ctx=null, buffer=null, state='idle', src=null, startedAt=0, pausedAt=0, playing=false, raf=null, manualStop=false, playWhenReady=false;
-  function mk(){ if(!ctx){ try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ctx=null; } } return ctx; }
-  async function load(){
-    if(state==='loading'||state==='ready') return;
-    state='loading'; if(!mk()){ state='error'; return; }
-    var deadline=Date.now()+90000, attempt=0;
-    while(Date.now()<deadline){
-      attempt++;
-      hint.textContent = attempt===1 ? 'Loading my voice…' : 'Waking up the recording — one moment…';
-      try{
-        var r=await fetch(AUDIO,{cache:'no-store'});
-        if(!r.ok) throw new Error('http '+r.status);
-        var ab=await r.arrayBuffer();
-        if(ab.byteLength<1000) throw new Error('not ready');
-        buffer=await ctx.decodeAudioData(ab);
-        state='ready'; hint.textContent='';
-        if(playWhenReady){ playWhenReady=false; play(0); }
-        return;
-      }catch(e){
-        await new Promise(function(res){ setTimeout(res,4000); });
-      }
-    }
-    state='error'; hint.textContent='Could not play the sample. Please refresh and try again.';
-  }
-  function play(off){
-    if(ctx.state==='suspended') ctx.resume();
-    src=ctx.createBufferSource(); src.buffer=buffer; src.connect(ctx.destination); src.onended=ended;
-    startedAt=ctx.currentTime-off; manualStop=false; src.start(0,off); playing=true;
-    btn.classList.add('playing'); hint.textContent='Playing…'; tick();
-  }
-  function pause(){ pausedAt=ctx.currentTime-startedAt; manualStop=true; try{ src.stop(); }catch(e){} src=null; playing=false; if(raf) cancelAnimationFrame(raf); btn.classList.remove('playing'); hint.textContent='Paused — tap to continue'; }
-  function ended(){ if(manualStop){ manualStop=false; return; } playing=false; if(raf) cancelAnimationFrame(raf); pausedAt=0; bar.style.width='0%'; btn.classList.remove('playing'); hint.textContent='Tap to play again'; }
-  function tick(){ if(!playing) return; var c=ctx.currentTime-startedAt; if(c>buffer.duration) c=buffer.duration; bar.style.width=(c/buffer.duration*100)+'%'; raf=requestAnimationFrame(tick); }
-  btn.addEventListener('click', async function(){
-    mk(); if(ctx && ctx.state==='suspended'){ try{ await ctx.resume(); }catch(e){} }
-    if(state==='error'){ load(); return; }
-    if(state!=='ready'){ playWhenReady=true; load(); return; }
-    if(playing) pause(); else play(pausedAt>=buffer.duration?0:pausedAt);
+  if(!audio||!btn) return;
+  btn.addEventListener('click', function(){
+    if(audio.paused){
+      hint.textContent='';
+      var p=audio.play();
+      if(p && p.catch){ p.catch(function(){ hint.textContent='Tap the button once more to play.'; }); }
+    } else { audio.pause(); }
   });
+  audio.addEventListener('playing', function(){ btn.classList.add('playing'); hint.textContent='Playing…'; });
+  audio.addEventListener('pause', function(){ if(!audio.ended){ btn.classList.remove('playing'); hint.textContent='Paused — tap to continue'; } });
+  audio.addEventListener('ended', function(){ btn.classList.remove('playing'); hint.textContent='Tap to play again'; bar.style.width='0%'; });
+  audio.addEventListener('timeupdate', function(){ if(audio.duration){ bar.style.width=(audio.currentTime/audio.duration*100)+'%'; } });
+  audio.addEventListener('waiting', function(){ hint.textContent='Loading…'; });
+  audio.addEventListener('error', function(){ hint.textContent='Could not play the sample. Please refresh and try again.'; });
 })();
 </script>
 
