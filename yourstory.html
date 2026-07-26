@@ -258,6 +258,19 @@ function renderRecordingPage(data) {
   '</div>';
   html += '</div>';
 
+  // Messages for later guide
+  html += '<div class="card">';
+  html += '<h2 style="margin-top:0;">Messages for later <span style="font-weight:normal;font-size:15px;color:#8b5a2b;">— optional, and treasured</span></h2>';
+  html += '<p>Beyond your story, you can leave short messages for moments down the road — heard in your own voice, when the day comes. Record one for any of these and give it a name like “For Sarah’s wedding day.” Each becomes its own QR keepsake page in your book.</p>';
+  html += '<div class="sections">' +
+    '<div class="section-card"><h3>A wedding day</h3><p>A blessing for a daughter, son, or grandchild on the day they marry.</p></div>' +
+    '<div class="section-card"><h3>A grandchild not yet born</h3><p>Words for someone you may never meet — where they came from, and that they’re loved.</p></div>' +
+    '<div class="section-card"><h3>A graduation or milestone</h3><p>Something for a big day ahead — a graduation, a new baby, a first home.</p></div>' +
+    '<div class="section-card"><h3>The first holiday without you</h3><p>A gentle message for your family to hear when they miss you most.</p></div>' +
+  '</div>';
+  html += '<div class="reassure" style="margin-top:20px;"><strong>How to record one:</strong> use <strong>Add a recording</strong> below just like normal, then tap <strong>Rename</strong> and say who it’s for. That’s all — I’ll place it in your book as a keepsake page, and your family also gets the recording to keep forever.</div>';
+  html += '</div>';
+
   // Recordings list
   html += '<div class="card">';
   html += '<h2>Your recordings (' + recordings.length + ')</h2>';
