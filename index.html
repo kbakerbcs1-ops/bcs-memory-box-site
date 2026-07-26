@@ -530,20 +530,6 @@
     </div>
 </section>
 
-<!-- WHAT -->
-<section>
-    <div class="container">
-        <div class="section-eyebrow">What we do</div>
-        <h2>You talk. I polish. The stories last.</h2>
-        <ul class="what-list">
-            <li>Record your stories in your own voice — no typing, no complicated technology.</li>
-            <li>Gentle and self-paced — record on the phone, tablet, or computer you already own.</li>
-            <li>Stories saved privately and shared only with your family.</li>
-            <li>A keepsake that lasts — a beautifully printed hardcover book.</li>
-        </ul>
-    </div>
-</section>
-
 <!-- HOW IT WORKS -->
 <section>
     <div class="container">
@@ -573,13 +559,71 @@
     </div>
 </section>
 
-<!-- HEAR THEIR VOICE -->
-<section class="voice-keepsake">
-    <div class="narrow glass">
+<!-- ===== SIDE-BY-SIDE: WARM INTERVIEWER + VOICE KEEPSAKE ===== -->
+<style>
+  .dual-row{display:flex;gap:28px;align-items:stretch;}
+  .dual-col{flex:1 1 0;min-width:0;margin:0;}
+  .dual-col h2{font-size:clamp(26px,2.6vw,36px);}
+  @media (max-width:900px){ .dual-row{flex-direction:column;} }
+
+  .wi-guide{display:flex;gap:14px;align-items:flex-start;margin-top:22px;}
+  .wi-avatar{flex:0 0 auto;width:52px;height:52px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#a56b34,#6f4720);box-shadow:0 8px 22px rgba(111,71,32,.4);
+    display:flex;align-items:center;justify-content:center;font-family:'Merriweather',Georgia,serif;font-size:22px;color:#fff;line-height:1;}
+  .wi-bubble{background:rgba(0,0,0,0.34);border:1px solid rgba(255,255,255,0.14);border-radius:16px;
+    border-top-left-radius:4px;padding:16px 20px;flex:1 1 auto;}
+  .wi-who{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--beige-dk);margin-bottom:6px;font-family:'Open Sans',sans-serif;}
+  .wi-gq{font-family:'Merriweather',Georgia,serif;font-size:clamp(18px,2vw,22px);color:#fff;line-height:1.35;margin:0;min-height:2.6em;transition:opacity .5s ease;}
+  .wi-gq.fade{opacity:0;}
+  .wi-steps{display:flex;gap:9px;margin-top:12px;align-items:center;padding-left:66px;flex-wrap:wrap;}
+  .wi-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25);transition:background .4s ease;}
+  .wi-dot.on{background:var(--beige);}
+  .wi-steplabel{font-size:12px;color:var(--text-dim);margin-left:6px;font-family:'Open Sans',sans-serif;}
+  .wi-recrow{display:flex;align-items:center;gap:14px;margin-top:22px;background:rgba(0,0,0,0.28);
+    border:1px solid rgba(255,255,255,0.14);border-radius:14px;padding:14px 18px;}
+  .wi-recbtn{flex:0 0 auto;width:54px;height:54px;border-radius:50%;border:none;
+    background:radial-gradient(circle at 35% 30%,#d05a48,#a3271b);box-shadow:0 8px 22px rgba(163,39,27,.45);
+    display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
+  .wi-recbtn i{width:16px;height:16px;border-radius:50%;background:#fff;display:block;}
+  .wi-rc1{font-family:'Merriweather',Georgia,serif;font-size:16px;color:#fff;}
+  .wi-rc2{font-size:13px;color:var(--text-dim);font-family:'Open Sans',sans-serif;}
+  .wi-reassure{font-style:italic;color:var(--beige);margin-top:22px;}
+</style>
+<section>
+  <div class="container dual-row">
+
+    <!-- Column 1: Warm interviewer -->
+    <div class="dual-col glass wi-col">
+        <div class="section-eyebrow">One gentle question at a time</div>
+        <h2>You just answer. That&rsquo;s the whole thing.</h2>
+        <p>No interview to schedule, nobody to impress. A warm guide asks one small question, waits, and listens &mdash; the way a curious grandchild would. You answer as many as you like, and stop whenever you want.</p>
+        <div class="wi-guide">
+            <div class="wi-avatar">&ldquo;</div>
+            <div class="wi-bubble">
+                <div class="wi-who">Your guide asks</div>
+                <p class="wi-gq" id="wiGq">What did Sunday dinner smell like at your grandmother&rsquo;s house?</p>
+            </div>
+        </div>
+        <div class="wi-steps" id="wiDots">
+            <span class="wi-dot on"></span><span class="wi-dot"></span><span class="wi-dot"></span><span class="wi-dot"></span>
+            <span class="wi-steplabel">one at a time, as many as you like</span>
+        </div>
+        <div class="wi-recrow">
+            <button class="wi-recbtn" aria-label="Tap to talk"><i></i></button>
+            <div>
+                <div class="wi-rc1">Tap, and just talk.</div>
+                <div class="wi-rc2">Stop whenever you want. The next little question comes when you&rsquo;re ready.</div>
+            </div>
+        </div>
+        <p class="wi-reassure">It listens &mdash; and the next question follows your story.</p>
+    </div>
+
+    <!-- Column 2: Voice keepsake -->
+    <div class="dual-col glass voice-keepsake">
         <div class="section-eyebrow">Their actual voice, kept forever</div>
-        <h2>You don't just read it — you hear it.</h2>
-        <p>Inside every book is a small QR code. Scan it, and the story plays in their <em>own voice</em> — the laugh, the pause, the warmth. Years from now, a grandchild can still hear them tell it.</p>
-        <p class="vk-invite">Here's a real one — my own message to my family. Tap to listen:</p>
+        <h2>You don&rsquo;t just read it &mdash; you hear it.</h2>
+        <p>Inside every book is a small QR code. Scan it, and the story plays in their <em>own voice</em> &mdash; the laugh, the pause, the warmth. Years from now, a grandchild can still hear them tell it.</p>
+        <p class="vk-invite">Here&rsquo;s a real one &mdash; my own message to my family. Tap to listen:</p>
         <div class="vk-player">
             <audio id="vkAudio" src="voice-sample.m4a" preload="none"></audio>
             <button class="vk-btn" id="vkBtn" aria-label="Play recording">
@@ -594,7 +638,32 @@
             </div>
         </div>
     </div>
+
+  </div>
 </section>
+<script>
+(function(){
+  var el=document.getElementById('wiGq'), dots=document.getElementById('wiDots');
+  if(!el||!dots) return;
+  var qs=[
+    'What did Sunday dinner smell like at your grandmother’s house?',
+    'What was the first car you ever drove — and who was sitting next to you?',
+    'How did you meet your wife? Tell me about the first time you saw her.',
+    'What song, if you heard it right now, would take you straight back?'
+  ];
+  var dotEls=dots.querySelectorAll('.wi-dot');
+  var i=0;
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function show(n){ for(var d=0;d<dotEls.length;d++){ dotEls[d].classList.toggle('on', d===n); } }
+  function next(){
+    i=(i+1)%qs.length;
+    if(reduce){ el.textContent=qs[i]; show(i); return; }
+    el.classList.add('fade');
+    setTimeout(function(){ el.textContent=qs[i]; show(i); el.classList.remove('fade'); }, 500);
+  }
+  setInterval(next, 4600);
+})();
+</script>
 <script>
 (function(){
   var audio=document.getElementById('vkAudio');
