@@ -117,6 +117,34 @@ function getSession() { try { return localStorage.getItem(SESSION_KEY); } catch(
 function setSession(v) { try { localStorage.setItem(SESSION_KEY, v); } catch(e) {} }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch(e) {} }
 
+// Copy a customer's personal story link to the clipboard (link built from their token).
+function bcsCopyLink(btn) {
+  var link = btn.getAttribute('data-link');
+  var stEl = document.getElementById('linkcopy-status');
+  function ok(){ if(stEl){ stEl.style.color='#2a5a2a'; stEl.textContent='Copied! Paste it into a text or email to them.'; } }
+  function fail(){ if(stEl){ stEl.style.color='#a33'; stEl.textContent='Could not copy — use the Email button instead.'; } }
+  try {
+    navigator.clipboard.writeText(link).then(ok).catch(function(){
+      try { var ta=document.createElement('textarea'); ta.value=link; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); ok(); } catch(e){ fail(); }
+    });
+  } catch(e){ fail(); }
+}
+// Open a pre-filled Gmail compose to the customer with their story link in the body.
+function bcsEmailLink(btn) {
+  var link = btn.getAttribute('data-link');
+  var email = btn.getAttribute('data-email');
+  var name = btn.getAttribute('data-name') || 'there';
+  var subj = 'Your BCS Memory Box story link';
+  var body = 'Hi ' + name + ',\n\n'
+    + 'Here is your personal link to get back into your story and record more whenever you like:\n\n'
+    + link + '\n\n'
+    + 'Just tap it and you can pick up right where you left off. It helps to save this email so the link is always handy.\n\n'
+    + 'Warmly,\nKen\nBCS Memory Box';
+  var url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(email)
+    + '&su=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body);
+  window.open(url, '_blank');
+}
+
 function escapeHtml(s) { var d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
 function fmtDate(iso) { if(!iso) return ''; return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }
 function fmtSize(b) { b=+b||0; if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
@@ -350,6 +378,13 @@ async function showCustomer(id) {
     html +=   '<div class="detail-row"><div class="label">Paid at</div><div class="val">' + (c.paid_at ? fmtDate(c.paid_at) : '<span class="muted">not yet</span>') + '</div></div>';
     html +=   '<div class="detail-row"><div class="label">Customer ID</div><div class="val"><code>' + escapeHtml(c.id) + '</code></div></div>';
     html +=   '<div class="detail-row"><div class="label">Access token</div><div class="val"><code>' + escapeHtml(c.access_token.slice(0,8)) + '…</code> <span class="muted">(URL: /yourstory.html?token=…)</span></div></div>';
+    var _storyLink = 'https://www.bcsmemorybox.com/yourstory.html?token=' + c.access_token;
+    html +=   '<div class="detail-row"><div class="label">Story link</div><div class="val">' +
+                '<button class="btn" data-link="' + escapeHtml(_storyLink) + '" onclick="bcsCopyLink(this)">Copy link</button> ' +
+                '<button class="btn" data-link="' + escapeHtml(_storyLink) + '" data-email="' + escapeHtml(c.email) + '" data-name="' + escapeHtml(c.name).replace(/"/g,'&quot;') + '" onclick="bcsEmailLink(this)">Email link to ' + escapeHtml(c.name) + '</button>' +
+                ' <span id="linkcopy-status" class="muted" style="margin-left:10px;font-size:13px;"></span>' +
+                '<div class="muted" style="margin-top:6px;font-size:12px;">Send this to the customer so they can get back into their story and record more.</div>' +
+              '</div></div>';
     if (c.stripe_payment_intent_id) {
       html += '<div class="detail-row"><div class="label">Stripe payment</div><div class="val"><code>' + escapeHtml(c.stripe_payment_intent_id) + '</code></div></div>';
     }
