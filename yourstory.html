@@ -828,32 +828,52 @@ function bindRecordHandler() {
     actionsEl.style.display = 'none';
     recBtn.style.display = 'none';
     timerEl.style.display = 'none';
-    statusEl.innerHTML = '<strong>Saving your recording — please don’t close this page…</strong>';
     statusEl.style.color = '#5a4a3a';
 
     var mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
     var ext = mime.indexOf('mp4') !== -1 ? 'm4a' : mime.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
     var fname = 'recording-' + Date.now() + '.' + ext;
-    var fd = new FormData();
-    fd.append('audio', audioBlob, fname);
 
-    try {
-      var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token), { method: 'POST', body: fd });
-      var data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || ('Save failed (status ' + resp.status + ')'));
-      isUploading = false;
-      statusEl.innerHTML = SAVED_SAFE_HTML;
-      statusEl.style.color = '#2a5a2a';
-      setTimeout(function(){ window.location.reload(); }, 4000);
-    } catch (err) {
-      console.error('Record save error:', err);
-      isUploading = false;
-      statusEl.innerHTML = '<strong style="color:#c0392b;">Your recording didn’t save yet — but it’s still here.</strong> Please tap the button below to try again.';
-      actionsEl.style.display = 'block';
-      saveBtn.style.display = '';
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Try saving again';
-      redoBtn.style.display = 'none';
+    // Save with a real time limit + automatic retries, so a slow or sleeping
+    // server can NEVER leave the customer stuck on a frozen "Saving…" screen.
+    // The recording stays safely in memory (audioBlob) the whole time.
+    var MAX_TRIES = 3;
+    var PER_TRY_MS = 30000; // give each attempt up to 30s, then abort and retry
+    for (var attempt = 1; attempt <= MAX_TRIES; attempt++) {
+      statusEl.innerHTML = (attempt === 1)
+        ? '<strong>Saving your recording — please don’t close this page…</strong>'
+        : '<strong>Still saving — the server may be waking up. Hang tight; your recording is safe on this page…</strong>';
+      var fd = new FormData();
+      fd.append('audio', audioBlob, fname);
+      var ctrl = new AbortController();
+      var to = setTimeout(function(){ ctrl.abort(); }, PER_TRY_MS);
+      try {
+        var resp = await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(token), { method: 'POST', body: fd, signal: ctrl.signal });
+        clearTimeout(to);
+        var data = await resp.json().catch(function(){ return {}; });
+        if (!resp.ok || !data.ok) throw new Error(data.error || ('Save failed (status ' + resp.status + ')'));
+        // Saved!
+        isUploading = false;
+        statusEl.innerHTML = SAVED_SAFE_HTML;
+        statusEl.style.color = '#2a5a2a';
+        setTimeout(function(){ window.location.reload(); }, 4000);
+        return;
+      } catch (err) {
+        clearTimeout(to);
+        console.error('Record save attempt ' + attempt + ' failed:', err);
+        if (attempt < MAX_TRIES) {
+          await new Promise(function(res){ setTimeout(res, 2000); }); // brief pause, then retry automatically
+          continue;
+        }
+        // All attempts used — keep the recording safe and let them retry by hand.
+        isUploading = false;
+        statusEl.innerHTML = '<strong style="color:#c0392b;">Your recording didn’t save yet — but it’s still here, safe on this page.</strong> Please tap the button below to try again.';
+        actionsEl.style.display = 'block';
+        saveBtn.style.display = '';
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Try saving again';
+        redoBtn.style.display = 'none';
+      }
     }
   }
   saveBtn.addEventListener('click', doSave);
