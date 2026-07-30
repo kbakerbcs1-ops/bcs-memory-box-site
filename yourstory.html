@@ -431,14 +431,14 @@ function renderDraftReady(data) {
     '</div>' +
     renderChangeBanner(memoir) +
     renderMemoirReader(memoir, photos) +
-    renderDecisionCard(memoir) +
+    renderDecisionCard(memoir, customer) +
     renderMoreOptions(recordings, dl, customer);
 }
 
 // ONE clear decision after the memoir: change it (by voice) or approve it.
 // Hidden while a change is being made or waiting on keep/undo (the banner
 // handles those), so the customer is never looking at competing choices.
-function renderDecisionCard(memoir) {
+function renderDecisionCard(memoir, customer) {
   var st = memoir ? (memoir.revisionStatus || 'idle') : 'idle';
   if (st === 'working' || st === 'applied') return '';
   return '<div class="card" style="text-align:center;background:#faf7f0;border:1px solid #e8dfc9;">' +
@@ -450,9 +450,36 @@ function renderDecisionCard(memoir) {
         '<p id="revise-msg" class="muted" style="margin-top:8px;font-size:14px;"></p>' +
       '</div>' +
       '<p style="margin:20px 0 12px;color:#9a8b78;font-size:15px;">&mdash; or, if it\u2019s perfect &mdash;</p>' +
+      renderShippingForm(customer) +
       '<button class="btn btn-large" id="approve-btn" style="background:#2a6b3a;">\u2713 Yes &mdash; this is my book</button>' +
       '<p id="approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
       '<p class="muted" style="margin-top:12px;font-size:13px;">Nothing changes after you approve without you.</p>' +
+    '</div>';
+}
+
+// Mailing-address form shown only to customers whose plan includes a hardcover.
+// Prefilled if we already have an address on file. Returns '' for digital-only.
+function renderShippingForm(customer) {
+  if (!customer || !customer.includesHardcover) return '';
+  var sh = customer.shipping || {};
+  var v = function (x) { return escapeHtml(x || ''); };
+  var field = function (id, label, val, ph, half) {
+    return '<div style="' + (half ? 'display:inline-block;width:48%;' : 'width:100%;') + 'margin:6px 0;box-sizing:border-box;">' +
+      '<label for="' + id + '" style="display:block;font-size:14px;color:#5a4a3a;margin-bottom:3px;">' + label + '</label>' +
+      '<input id="' + id + '" type="text" value="' + v(val) + '" placeholder="' + (ph || '') + '" ' +
+      'style="width:100%;padding:10px 12px;font-size:16px;border:1px solid #cbbfa6;border-radius:6px;box-sizing:border-box;"/>' +
+    '</div>';
+  };
+  return '<div id="ship-form" style="max-width:540px;margin:0 auto 18px;text-align:left;background:#fff;border:1px solid #e8dfc9;border-radius:8px;padding:16px 18px;">' +
+      '<p style="margin:0 0 4px;font-weight:bold;color:#5a4a3a;font-size:17px;">\uD83D\uDCE6 Where should we mail your hardcover book?</p>' +
+      '<p class="muted" style="margin:0 0 12px;font-size:13px;">Your book is included &mdash; just tell us where to send it. (U.S. addresses for now.)</p>' +
+      field('ship-name', 'Full name', sh.name, 'e.g. Ken Baker') +
+      field('ship-addr1', 'Street address', sh.address1, '123 Main St') +
+      field('ship-addr2', 'Apartment, suite, etc. (optional)', sh.address2, '') +
+      field('ship-city', 'City', sh.city, '', true) + '<span style="display:inline-block;width:3%;"></span>' +
+      field('ship-state', 'State', sh.state, 'AR', true) +
+      field('ship-zip', 'ZIP code', sh.zip, '72201', true) + '<span style="display:inline-block;width:3%;"></span>' +
+      field('ship-phone', 'Phone (for delivery)', sh.phone, '', true) +
     '</div>';
 }
 
@@ -649,14 +676,34 @@ function bindReviseHandlers() {
   var approveBtn = document.getElementById('approve-btn');
   if (approveBtn) approveBtn.addEventListener('click', async function () {
     if (window.__bcsRecording) { alert('You’re still recording a change — please press Stop first.'); return; }
-    if (!confirm('Approve your book as final? You’re saying it reads just the way you want.')) return;
     var s = document.getElementById('approve-status');
+
+    // If this plan ships a hardcover, collect + validate the mailing address.
+    var shipForm = document.getElementById('ship-form');
+    var reqBody = null, reqHeaders = {};
+    if (shipForm) {
+      var g = function (id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+      var shipping = {
+        name: g('ship-name'), address1: g('ship-addr1'), address2: g('ship-addr2'),
+        city: g('ship-city'), state: g('ship-state'), zip: g('ship-zip'),
+        country: 'US', phone: g('ship-phone'),
+      };
+      if (!shipping.name || !shipping.address1 || !shipping.city || !shipping.state || !shipping.zip) {
+        if (s) { s.textContent = 'Please fill in your name and full mailing address so we can send your book.'; s.style.color = '#c0392b'; }
+        var f = document.getElementById('ship-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      reqBody = JSON.stringify({ shipping: shipping });
+      reqHeaders['Content-Type'] = 'application/json';
+    }
+
+    if (!confirm('Approve your book as final? You’re saying it reads just the way you want.')) return;
     approveBtn.disabled = true; approveBtn.textContent = 'Approving…'; if (s) s.textContent = '';
     try {
-      var resp = await fetch(API_BASE + '/api/customer/approve-book?token=' + encodeURIComponent(token), { method: 'POST' });
+      var resp = await fetch(API_BASE + '/api/customer/approve-book?token=' + encodeURIComponent(token), { method: 'POST', headers: reqHeaders, body: reqBody });
       var d = await resp.json(); if (!resp.ok || !d.ok) throw new Error(d.error || 'Failed');
       window.location.reload();
-    } catch (err) { if (s) { s.textContent = err.message || 'Something went wrong'; s.style.color = '#c0392b'; } approveBtn.disabled = false; approveBtn.textContent = '✓ This is my book — approve it'; }
+    } catch (err) { if (s) { s.textContent = err.message || 'Something went wrong'; s.style.color = '#c0392b'; } approveBtn.disabled = false; approveBtn.textContent = '✓ Yes — this is my book'; }
   });
 }
 

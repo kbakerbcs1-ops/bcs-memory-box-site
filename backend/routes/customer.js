@@ -102,7 +102,8 @@ router.get('/me', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Missing access token' });
 
     const customer = await db.queryOne(
-      `SELECT id, email, name, status, paid_at, created_at, plan
+      `SELECT id, email, name, status, paid_at, created_at, plan,
+              ship_name, ship_address1, ship_address2, ship_city, ship_state, ship_zip, ship_country, ship_phone
        FROM customers
        WHERE access_token = $1`,
       [token]
@@ -163,6 +164,19 @@ router.get('/me', async (req, res) => {
         status: customer.status,
         paidAt: customer.paid_at,
         createdAt: customer.created_at,
+        plan: customer.plan || 'story',
+        // Does this plan include a shipped hardcover? (drives the address form)
+        includesHardcover: customer.plan === 'hardcover' || customer.plan === 'legacy',
+        shipping: {
+          name: customer.ship_name || '',
+          address1: customer.ship_address1 || '',
+          address2: customer.ship_address2 || '',
+          city: customer.ship_city || '',
+          state: customer.ship_state || '',
+          zip: customer.ship_zip || '',
+          country: customer.ship_country || '',
+          phone: customer.ship_phone || '',
+        },
       },
       recordings,
       photos,
