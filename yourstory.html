@@ -354,9 +354,10 @@ function renderRecordingPage(data) {
 
   // Done button — fires the cleanup pipeline asynchronously.
   if (recordings.length > 0) {
-    html += '<button class="btn btn-large" id="done-btn">I\'m done — turn my recordings into a memoir</button>';
+    html += '<button class="btn btn-large" id="done-btn">Create my draft to review</button>';
     html += '<p id="done-status" style="text-align:center;color:#999;font-size:13px;margin-top:8px;">' +
-            'Click when you\'ve recorded everything you want. Processing usually takes 15-30 minutes.' +
+            'When you’ve recorded everything you want, this turns your recordings into a written draft for you to read. ' +
+            'Nothing is final — you’ll be able to read it, ask for changes, or add more. Usually takes 15–30 minutes.' +
             '</p>';
   }
 
@@ -410,23 +411,95 @@ function addMoreCard() {
   '</div>';
 }
 
-function renderDraftReady(customer, photoCount, recordings) {
+function renderDraftReady(data) {
+  var customer = data.customer;
+  var photos = data.photos || [];
+  var recordings = data.recordings || [];
+  var memoir = data.memoir;
+  var photoCount = photos.length;
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoNote = (photoCount > 0)
-    ? '<p style="background:#f4efe2;border:1px solid #e8dfc9;border-radius:6px;padding:14px 16px;margin-top:16px;line-height:1.5;">\uD83D\uDCF7 <strong>Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' included in your memoir</strong>, placed right alongside the stories they belong to, with the names you gave them. If you would also like a printed hardcover copy, you can order one anytime \u2014 just reach out to Ken.</p>'
+    ? '<p style="background:#f4efe2;border:1px solid #e8dfc9;border-radius:6px;padding:14px 16px;margin-top:16px;line-height:1.5;">\uD83D\uDCF7 <strong>Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' included in your memoir</strong>, placed right alongside the stories they belong to, with the names you gave them.</p>'
     : '';
   return renderStatusBar(customer.status) +
     '<div class="card">' +
       '<div class="eyebrow">Ready</div>' +
-      '<h1>Your draft is ready.</h1>' +
-      '<p>Read through it, and let us know if you would like any changes. Two rounds of revisions are included.</p>' +
-      '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
+      '<h1>Your draft is ready to read.</h1>' +
+      '<p>Here is your story, right below on this page. Nothing is final yet &mdash; read it over, and if you\u2019d like anything changed, just use the \u201CWant a revision?\u201D box further down. Two rounds of revisions are included.</p>' +
       photoNote +
+    '</div>' +
+    renderMemoirReader(memoir, photos) +
+    '<div class="card">' +
+      '<h2>Want a copy to keep?</h2>' +
+      '<p>You can download your memoir as a Word document to save, print, or share with family.</p>' +
+      '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
     '</div>' +
     renderRecordingsPlayback(recordings) +
     addMoreCard() +
     revisionRequestCard() + (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
+}
+
+// ---- Inline memoir reader (Step 1) -----------------------------------------
+// Shows the SAME text the .docx contains, right on the page, so a customer can
+// read their story without downloading or opening Word. We render the simple
+// line-based markdown our generator emits (# title, ## chapter, *italic line*,
+// [[PHOTO:N]] markers, plain paragraphs) 1:1 \u2014 no external library. Returns ''
+// when there's no memoir text yet, so the page is unaffected until it exists.
+function renderMemoirReader(memoir, photos) {
+  if (!memoir || !memoir.markdown) return '';
+  photos = photos || [];
+  var token = getToken();
+  var placed = {};
+  function photoHtml(p) {
+    var src = API_BASE + '/api/customer/photo/' + p.id + '?token=' + encodeURIComponent(token);
+    var cap = (p.caption && p.caption.trim())
+      ? '<figcaption class="memoir-cap">' + escapeHtml(p.caption) + '</figcaption>' : '';
+    return '<figure class="memoir-figure"><img src="' + src + '" alt="' + escapeHtml(p.caption || 'photograph') + '" loading="lazy" onerror="this.style.display=\'none\';" />' + cap + '</figure>';
+  }
+  var lines = String(memoir.markdown).split('\n');
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/\s+$/, '');
+    var pm = line.match(/^\[\[PHOTO:(\d+)\]\]$/);
+    if (pm) {
+      var idx = parseInt(pm[1], 10);
+      var p = photos[idx - 1];
+      if (p && !placed[idx]) { placed[idx] = true; out.push(photoHtml(p)); }
+      continue;
+    }
+    if (!line) continue;
+    if (line.indexOf('# ') === 0) {
+      out.push('<h1 class="memoir-title">' + escapeHtml(line.slice(2)) + '</h1>');
+    } else if (line.indexOf('## ') === 0) {
+      out.push('<h2 class="memoir-chapter">' + escapeHtml(line.slice(3)) + '</h2>');
+    } else {
+      var isItalic = line.charAt(0) === '*' && line.charAt(line.length - 1) === '*' && line.length > 2;
+      var text = isItalic ? line.slice(1, -1) : line;
+      out.push('<p' + (isItalic ? ' class="memoir-italic"' : '') + '>' + escapeHtml(text) + '</p>');
+    }
+  }
+  // Any photos never referenced by a marker \u2014 show them so none are missed.
+  var leftover = photos.filter(function (p, k) { return !placed[k + 1]; });
+  if (leftover.length) {
+    out.push('<h2 class="memoir-chapter">Photographs</h2>');
+    leftover.forEach(function (p) { out.push(photoHtml(p)); });
+  }
+  var style = '<style>' +
+    '.memoir-reader .memoir-doc{max-width:640px;margin:6px auto 0;font-family:Georgia,serif;color:#2a2520;line-height:1.75;font-size:20px;}' +
+    '.memoir-doc .memoir-title{font-size:30px;text-align:center;color:#8b5a2b;margin:0 0 26px;font-weight:bold;line-height:1.25;}' +
+    '.memoir-doc .memoir-chapter{font-size:23px;color:#8b5a2b;margin:36px 0 12px;font-weight:bold;line-height:1.3;}' +
+    '.memoir-doc p{margin:0 0 15px;}' +
+    '.memoir-doc .memoir-italic{font-style:italic;color:#5a4a3a;}' +
+    '.memoir-doc .memoir-figure{margin:24px auto;text-align:center;}' +
+    '.memoir-doc .memoir-figure img{max-width:100%;height:auto;border-radius:6px;box-shadow:0 3px 12px rgba(0,0,0,0.18);}' +
+    '.memoir-doc .memoir-cap{font-size:15px;color:#7a6a58;margin-top:7px;font-style:italic;}' +
+  '</style>';
+  return '<div class="card memoir-reader">' +
+      style +
+      '<div class="eyebrow">Your memoir</div>' +
+      '<div class="memoir-doc">' + out.join('\n') + '</div>' +
+    '</div>';
 }
 
 function revisionRequestCard() {
@@ -439,7 +512,12 @@ function revisionRequestCard() {
   '</div>';
 }
 
-function renderDelivered(customer, photoCount, recordings) {
+function renderDelivered(data) {
+  var customer = data.customer;
+  var photos = data.photos || [];
+  var recordings = data.recordings || [];
+  var memoir = data.memoir;
+  var photoCount = photos.length;
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoLine = (photoCount > 0)
@@ -449,10 +527,11 @@ function renderDelivered(customer, photoCount, recordings) {
     '<div class="card">' +
       '<div class="eyebrow">Complete</div>' +
       '<h1>Here is your memoir.</h1>' +
-      '<p>This is your final document. You can download it anytime from this page.</p>' +
+      '<p>This is your finished story, ready to read right here on this page. You can also download it anytime.</p>' +
       '<p>' + photoLine + '</p>' +
       '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your memoir (.docx)</a></p>' +
     '</div>' +
+    renderMemoirReader(memoir, photos) +
     renderRecordingsPlayback(recordings) +
     '<div class="card">' +
       '<h2>Want to add more to your story?</h2>' +
@@ -557,8 +636,8 @@ function renderError(msg) {
     else if (status === 'recording')   html = renderRecordingPage(data);
     else if (status === 'processing')  html = renderProcessing(data.customer);
     else if (status === 'follow_up')   html = renderFollowUp(data);
-    else if (status === 'draft_ready') html = renderDraftReady(data.customer, (data.photos||[]).length, (data.recordings||[]));
-    else if (status === 'delivered')   html = renderDelivered(data.customer, (data.photos||[]).length, (data.recordings||[]));
+    else if (status === 'draft_ready') html = renderDraftReady(data);
+    else if (status === 'delivered')   html = renderDelivered(data);
     else if (status === 'error')              html = renderErrorState(data.customer);
     else if (status === 'revision_requested') html = renderRevisionRequested(data.customer);
     else html = renderError('Unknown status: ' + status);
@@ -609,8 +688,8 @@ function bindDoneHandler(currentStatus) {
     var token = getToken();
     if (!token) return;
     doneBtn.disabled = true;
-    doneBtn.textContent = 'Starting…';
-    if (statusEl) statusEl.textContent = 'Kicking off the cleanup pipeline…';
+    doneBtn.textContent = 'Creating your draft…';
+    if (statusEl) statusEl.textContent = 'Turning your recordings into a draft you can read…';
 
     try {
       var resp = await fetch(API_BASE + '/api/customer/finish-recording?token=' + encodeURIComponent(token), {
@@ -619,7 +698,7 @@ function bindDoneHandler(currentStatus) {
       var data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || 'Could not start processing.');
       if (statusEl) {
-        statusEl.textContent = 'Processing started! This page will update automatically.';
+        statusEl.textContent = 'Your draft is being created! This page will update automatically.';
         statusEl.style.color = '#2a5a2a';
       }
       setTimeout(function(){ window.location.reload(); }, 1500);
@@ -630,7 +709,7 @@ function bindDoneHandler(currentStatus) {
         statusEl.style.color = '#c0392b';
       }
       doneBtn.disabled = false;
-      doneBtn.textContent = currentStatus === 'error' ? 'Retry processing' : "I'm done — turn my recordings into a memoir";
+      doneBtn.textContent = currentStatus === 'error' ? 'Retry processing' : 'Create my draft to review';
     }
   });
 }

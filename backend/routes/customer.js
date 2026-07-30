@@ -132,6 +132,19 @@ router.get('/me', async (req, res) => {
       [customer.id]
     );
 
+    // The memoir text the customer is allowed to read inline on their page.
+    // Same visibility rule as the /download endpoint, so what they read here is
+    // exactly what the .docx contains. Null until a reviewable draft exists.
+    const memoirDraft = await db.queryOne(
+      `SELECT version, markdown_content
+       FROM drafts
+       WHERE customer_id = $1
+         AND status IN ('delivered', 'approved', 'ready_for_review')
+       ORDER BY version DESC, created_at DESC
+       LIMIT 1`,
+      [customer.id]
+    );
+
     res.json({
       ok: true,
       customer: {
@@ -146,6 +159,9 @@ router.get('/me', async (req, res) => {
       photos,
       drafts,
       followUps,
+      memoir: memoirDraft
+        ? { version: memoirDraft.version, markdown: memoirDraft.markdown_content }
+        : null,
     });
   } catch (err) {
     console.error('[customer/me] error:', err);
