@@ -6,6 +6,7 @@ const multer = require('multer');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
 const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync } = require('../lib/cleanup');
+const printOrder = require('../lib/printOrder');
 
 const router = express.Router();
 router.use(express.json());
@@ -530,7 +531,7 @@ router.post('/approve-book', async (req, res) => {
   try {
     const token = req.query.token || req.body.token;
     if (!token) return res.status(401).json({ error: 'Missing access token' });
-    const customer = await db.queryOne('SELECT id, name, email, status FROM customers WHERE access_token = $1', [token]);
+    const customer = await db.queryOne('SELECT id, name, email, status, plan FROM customers WHERE access_token = $1', [token]);
     if (!customer) return res.status(404).json({ error: 'Account not found' });
 
     const draft = await currentReviewableDraft(customer.id);
@@ -545,17 +546,44 @@ router.post('/approve-book', async (req, res) => {
     );
     await db.query("UPDATE customers SET status = 'approved', approved_at = NOW() WHERE id = $1", [customer.id]);
 
-    // Notify Ken (the print handoff is manual until the Lulu print API is wired).
+    // Fully-automatic hardcover ordering. If Lulu is configured and everything
+    // needed is in place, this places the print order with no touch from Ken.
+    // Otherwise it returns { ordered:false, reason } and we email Ken as before.
+    let order = { ordered: false, reason: 'unknown' };
     try {
-      const subject = '✅ ' + customer.name + ' approved their book — ready to print';
+      order = await printOrder.autoOrderOnApproval(customer, draft);
+    } catch (e) {
+      console.error('[approve-book] auto-order threw (falling back): ' + e.message);
+    }
+
+    try {
       const adminLink = 'https://www.bcsmemorybox.com/admin.html';
-      const html =
+      let subject, html;
+      if (order.ordered) {
+        // The order was placed automatically.
+        subject = '📖 Ordered ' + customer.name + '’s hardcover automatically';
+        html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">Hardcover ordered — nothing for you to do 📖</h2>' +
+'<p><strong>' + escapeHtml(customer.name) + '</strong> (' + escapeHtml(customer.email) + ') approved their memoir (v' + draft.version + '), and I placed their hardcover order with Lulu automatically.</p>' +
+'<p>Total <strong>$' + escapeHtml(String(order.total)) + ' ' + escapeHtml(order.currency || 'USD') + '</strong>' + (order.luluId ? ' · Lulu job <strong>' + escapeHtml(order.luluId) + '</strong>' : '') + (order.env === 'sandbox' ? ' · <em>sandbox test</em>' : '') + '.</p>' +
+'<p>It won’t go to the printer for about 24 hours, so there’s a window to cancel from the admin dashboard if anything looks wrong. Otherwise Lulu prints and ships it to the customer.</p>' +
+'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'<p style="color:#8b5a2b;margin-top:24px;">— Bullet 🐶</p>' +
+'</div>';
+      } else {
+        // Fall back to the manual "ready to print" notice, with a short note on why.
+        subject = '✅ ' + customer.name + ' approved their book — ready to print';
+        html =
 '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
 '<h2 style="color:#8b5a2b;">A customer approved their book</h2>' +
 '<p><strong>' + escapeHtml(customer.name) + '</strong> (' + escapeHtml(customer.email) + ') read their memoir, made any changes they wanted, and approved it as final (draft v' + draft.version + ').</p>' +
 '<p>It is ready to be printed.</p>' +
+'<p style="color:#7a726a;font-size:13px;">' + escapeHtml(autoOrderNote(order)) + '</p>' +
 '<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'<p style="color:#8b5a2b;margin-top:24px;">— Bullet 🐶</p>' +
 '</div>';
+      }
       await sendEmail('kbakerbcs1@gmail.com', subject, html);
     } catch (e) { console.error('[approve-book] could not email Ken: ' + e.message); }
 
@@ -698,6 +726,21 @@ function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+// Short, plain-English note explaining why an automatic hardcover order didn't
+// happen, shown to Ken in the fallback "ready to print" email.
+function autoOrderNote(order) {
+  switch (order && order.reason) {
+    case 'lulu_disabled':  return 'Automatic printing isn’t switched on yet (Lulu keys not set) — place this one on Lulu as usual.';
+    case 'digital_plan':   return 'This customer is on the digital plan, so there’s no hardcover to print.';
+    case 'no_print_pdf':   return 'The print-ready PDF isn’t generated for this book yet, so I couldn’t auto-order it.';
+    case 'no_address':     return 'No shipping address is on file yet, so I couldn’t auto-order it.';
+    case 'already_ordered':return 'A hardcover order for this book already exists.';
+    case 'cost_anomaly':   return 'Lulu’s price came back unexpectedly high ($' + (order.total || '?') + '), so I held off — please review before printing.';
+    case 'error':          return 'The automatic order hit an error (' + (order.error || 'unknown') + '), so please place this one manually.';
+    default:               return 'Placed for manual printing.';
+  }
 }
 
 // ---------------------------------------------------------------------------
