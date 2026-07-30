@@ -667,6 +667,147 @@ async function emailCustomerFollowUp(customer) {
   return sendEmail(customer.email, subject, html);
 }
 
+// ============================================================================
+// VOICE REVISIONS — a customer speaks one change; the AI applies ONLY that
+// change to the finished memoir and reports back, in plain words, what it did.
+// ============================================================================
+const REVISION_SYSTEM_PROMPT = [
+"You are helping a senior make ONE change to their finished memoir. You will receive their full memoir (Markdown) and a spoken instruction describing what they want changed. Apply ONLY that change and return the whole memoir again.",
+"",
+"RULES:",
+"- Make the SMALLEST edit that satisfies their instruction. Do not rewrite, restructure, re-title, re-order, or 'improve' anything they did not ask about. Every other word must stay EXACTLY as it was.",
+"- Keep their voice and the existing style. Keep every [[PHOTO:N]] marker line exactly where it is, unless the instruction is specifically about a photo.",
+"- STRICTLY THEIR OWN WORDS. You MAY: correct a fact/name/date they fix, add a short passage they dictate (using only what their instruction actually says), remove what they ask to remove, or reword a specific spot they point to. You MAY NOT invent memories, facts, feelings, places, or details they did not give. Never fabricate to fill a gap.",
+"- If the instruction is unclear, or you cannot safely tell what to change, make NO change and explain that in the summary instead.",
+"",
+"Return your answer in EXACTLY this format and nothing else:",
+"SUMMARY: <one short, warm, plain sentence telling them exactly what you changed — e.g. \"I changed your father's birth year from 1928 to 1932.\" If you made no change, say so and why, in one sentence. Never mention Markdown, files, or editing jargon.>",
+"---MEMOIR---",
+"<the full memoir in Markdown, with the change applied (or unchanged if you made no change)>"
+].join("\n");
+
+async function applyRevision(currentMarkdown, instruction, customerName) {
+  const userMsg =
+    "Storyteller: " + (customerName || '') + "\n\n" +
+    "=== THEIR SPOKEN INSTRUCTION (what they want changed) ===\n" + instruction + "\n\n" +
+    "=== THEIR CURRENT MEMOIR (Markdown) ===\n" + (currentMarkdown || '');
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 16000,
+      system: REVISION_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude revision error: ' + await resp.text());
+  const data = await resp.json();
+  const text = (data.content || []).map(b => b.text || '').join('').trim();
+
+  // Parse the delimiter format (robust against multi-line Markdown).
+  const marker = text.indexOf('---MEMOIR---');
+  let summary, memoir;
+  if (marker !== -1) {
+    const head = text.slice(0, marker);
+    memoir = text.slice(marker + '---MEMOIR---'.length).trim();
+    const sm = head.match(/SUMMARY:\s*([\s\S]*)/i);
+    summary = sm ? sm[1].trim() : head.trim();
+  } else {
+    // Model didn't follow the format — treat the whole thing as the memoir.
+    memoir = text;
+    summary = 'Your change has been applied.';
+  }
+  if (!memoir) memoir = currentMarkdown || '';
+  if (!summary) summary = 'Your change has been applied.';
+  return { revisedMarkdown: memoir, changeSummary: summary };
+}
+
+// Load a customer's photos WITH image bytes (HEIC-converted + EXIF-oriented),
+// ready to be re-placed into a regenerated .docx.
+async function loadCustomerPhotos(customerId) {
+  const { rows: photoRows } = await db.query(
+    `SELECT id, storage_key, caption, content_type, original_filename
+     FROM photos WHERE customer_id = $1 ORDER BY created_at ASC`,
+    [customerId]
+  );
+  const photos = [];
+  for (const ph of photoRows) {
+    try {
+      ph.buffer = await storage.getObjectBuffer(ph.storage_key);
+      if (ph.buffer && isHeic(ph.buffer, ph.original_filename, ph.content_type)) {
+        try {
+          const heicConvert = require('heic-convert');
+          ph.buffer = Buffer.from(await heicConvert({ buffer: ph.buffer, format: 'JPEG', quality: 0.9 }));
+          ph.content_type = 'image/jpeg';
+          ph.original_filename = (ph.original_filename || 'photo').replace(/\.(heic|heif)$/i, '') + '.jpg';
+        } catch (e) { console.error('[revision] HEIC convert failed ' + ph.id + ': ' + e.message); }
+      }
+      if (ph.buffer) ph.buffer = await autoOrient(ph.buffer, ph.content_type, ph.original_filename);
+    } catch (e) {
+      ph.buffer = null;
+      console.error('[revision] could not load photo ' + ph.id + ': ' + e.message);
+    }
+    photos.push(ph);
+  }
+  return photos;
+}
+
+// Runs ASYNCHRONOUSLY (not in the HTTP request). Transcribes the spoken
+// instruction, applies it, regenerates the .docx, and stores the result plus a
+// plain-language summary. Keeps the prior version so the customer can undo.
+async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
+  try {
+    const instruction = (await transcribeFromR2(instructionStorageKey)).trim();
+    if (!instruction) throw new Error('We could not hear the change clearly. Please try saying it again.');
+
+    const draft = await db.queryOne(
+      'SELECT id, markdown_content, docx_storage_key FROM drafts WHERE id = $1 AND customer_id = $2',
+      [draftId, customerId]
+    );
+    if (!draft) throw new Error('Draft not found.');
+    const customer = await db.queryOne('SELECT name FROM customers WHERE id = $1', [customerId]);
+
+    const { revisedMarkdown, changeSummary } =
+      await applyRevision(draft.markdown_content || '', instruction, customer ? customer.name : '');
+
+    const photos = await loadCustomerPhotos(customerId);
+    const docxBuffer = await renderMemoirDocx(revisedMarkdown, photos);
+    const newDocxKey = 'customers/' + customerId + '/drafts/rev-' + Date.now() + '.docx';
+    await storage.uploadObject(
+      newDocxKey, docxBuffer,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    );
+
+    await db.query(
+      `UPDATE drafts SET
+         prev_markdown_content = markdown_content,
+         prev_docx_storage_key = docx_storage_key,
+         markdown_content = $1,
+         docx_storage_key = $2,
+         last_change_summary = $3,
+         revision_status = 'applied',
+         revision_error = NULL
+       WHERE id = $4`,
+      [revisedMarkdown, newDocxKey, changeSummary, draftId]
+    );
+
+    try { await storage.deleteObject(instructionStorageKey); } catch (e) { /* best effort */ }
+    console.log('[revision] applied for customer ' + customerId + ' — ' + changeSummary);
+  } catch (err) {
+    console.error('[revision] FAILED for customer ' + customerId + ': ' + err.message);
+    await db.query(
+      "UPDATE drafts SET revision_status = 'error', revision_error = $1 WHERE id = $2",
+      [err.message, draftId]
+    ).catch(() => {});
+  }
+}
+
 module.exports = {
   runCleanupPipeline,
   generateFollowUpQuestions,
@@ -675,4 +816,7 @@ module.exports = {
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data
+  applyRevision,    // voice-revision: apply one spoken change
+  runRevisionAsync, // voice-revision: async orchestrator
+  loadCustomerPhotos,
 };

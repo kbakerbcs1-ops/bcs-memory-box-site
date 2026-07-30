@@ -2,12 +2,19 @@
 // No password — the access_token in the URL IS the credential.
 
 const express = require('express');
+const multer = require('multer');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
-const { runCleanupPipeline, emailAdminDraftReady } = require('../lib/cleanup');
+const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync } = require('../lib/cleanup');
 
 const router = express.Router();
 router.use(express.json());
+
+// In-memory upload for a spoken revision instruction (short clips; cap 25 MB).
+const reviseUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 // ----------------------------------------------------------------------------
 // POST /api/customer/signup
@@ -136,7 +143,8 @@ router.get('/me', async (req, res) => {
     // Same visibility rule as the /download endpoint, so what they read here is
     // exactly what the .docx contains. Null until a reviewable draft exists.
     const memoirDraft = await db.queryOne(
-      `SELECT version, markdown_content
+      `SELECT version, markdown_content, revision_status, last_change_summary,
+              revision_error, (prev_markdown_content IS NOT NULL) AS can_undo
        FROM drafts
        WHERE customer_id = $1
          AND status IN ('delivered', 'approved', 'ready_for_review')
@@ -160,7 +168,14 @@ router.get('/me', async (req, res) => {
       drafts,
       followUps,
       memoir: memoirDraft
-        ? { version: memoirDraft.version, markdown: memoirDraft.markdown_content }
+        ? {
+            version: memoirDraft.version,
+            markdown: memoirDraft.markdown_content,
+            revisionStatus: memoirDraft.revision_status || 'idle',
+            changeSummary: memoirDraft.last_change_summary || null,
+            revisionError: memoirDraft.revision_error || null,
+            canUndo: !!memoirDraft.can_undo,
+          }
         : null,
     });
   } catch (err) {
@@ -376,6 +391,178 @@ escapeHtml(feedback) +
   } catch (err) {
     console.error('[customer/request-revision] error:', err);
     res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken if it keeps happening.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helper: fetch the customer's current reviewable draft (the one they read).
+// ---------------------------------------------------------------------------
+async function currentReviewableDraft(customerId) {
+  return db.queryOne(
+    `SELECT id, version, revision_status, docx_storage_key, prev_docx_storage_key,
+            (prev_markdown_content IS NOT NULL) AS can_undo
+     FROM drafts
+     WHERE customer_id = $1
+       AND status IN ('delivered', 'approved', 'ready_for_review')
+     ORDER BY version DESC, created_at DESC LIMIT 1`,
+    [customerId]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/revise?token=...   (multipart: field "audio")
+// The customer SPEAKS a change. We store the clip and kick off the async
+// revision (transcribe -> AI apply -> regenerate). Returns immediately; the
+// page polls /me and shows what changed when it's done.
+// ---------------------------------------------------------------------------
+router.post('/revise', reviseUpload.single('audio'), async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+
+    const customer = await db.queryOne('SELECT id, status FROM customers WHERE access_token = $1', [token]);
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+    if (customer.status !== 'draft_ready') {
+      return res.status(400).json({ error: 'You can make changes once your draft is ready to read.' });
+    }
+
+    const draft = await currentReviewableDraft(customer.id);
+    if (!draft) return res.status(400).json({ error: 'No draft to change yet.' });
+    if (draft.revision_status === 'working') {
+      return res.json({ ok: true, working: true, message: 'A change is already being applied.' });
+    }
+
+    const audio = req.file;
+    if (!audio) return res.status(400).json({ error: 'No audio was received. Please try recording your change again.' });
+
+    const ext = (((audio.originalname || '').split('.').pop()) || (audio.mimetype || '').split('/').pop() || 'bin')
+      .toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
+    const key = 'customers/' + customer.id + '/revisions/' + Date.now() + '-' + db.randomToken(6) + '.' + ext;
+    await storage.uploadObject(key, audio.buffer, audio.mimetype);
+
+    await db.query("UPDATE drafts SET revision_status = 'working', revision_error = NULL WHERE id = $1", [draft.id]);
+    // Fire and forget — the page polls for the result.
+    runRevisionAsync(customer.id, draft.id, key).catch((e) => console.error('[revise] async error: ' + e.message));
+
+    res.json({ ok: true, working: true, message: 'Working on your change…' });
+  } catch (err) {
+    console.error('[customer/revise] error:', err);
+    res.status(500).json({ error: 'Something went wrong starting your change. Please try again.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/keep-revision?token=...
+// Customer is happy with the last voice change — commit it (drop the undo copy).
+// ---------------------------------------------------------------------------
+router.post('/keep-revision', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const customer = await db.queryOne('SELECT id FROM customers WHERE access_token = $1', [token]);
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+    const draft = await currentReviewableDraft(customer.id);
+    if (!draft) return res.status(400).json({ error: 'No draft found.' });
+
+    // Best-effort cleanup of the superseded .docx.
+    if (draft.prev_docx_storage_key) {
+      try { await storage.deleteObject(draft.prev_docx_storage_key); } catch (e) { /* best effort */ }
+    }
+    await db.query(
+      `UPDATE drafts SET revision_status = 'idle', last_change_summary = NULL,
+         prev_markdown_content = NULL, prev_docx_storage_key = NULL, revision_error = NULL
+       WHERE id = $1`,
+      [draft.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[customer/keep-revision] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/undo-revision?token=...
+// Customer wants to undo the last voice change — restore the previous version.
+// ---------------------------------------------------------------------------
+router.post('/undo-revision', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const customer = await db.queryOne('SELECT id FROM customers WHERE access_token = $1', [token]);
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const draft = await db.queryOne(
+      `SELECT id, prev_markdown_content, prev_docx_storage_key, docx_storage_key
+       FROM drafts
+       WHERE customer_id = $1 AND status IN ('delivered','approved','ready_for_review')
+       ORDER BY version DESC, created_at DESC LIMIT 1`,
+      [customer.id]
+    );
+    if (!draft || draft.prev_markdown_content == null) {
+      return res.status(400).json({ error: 'There is no change to undo.' });
+    }
+    const supersededDocx = draft.docx_storage_key;
+    await db.query(
+      `UPDATE drafts SET
+         markdown_content = prev_markdown_content,
+         docx_storage_key = prev_docx_storage_key,
+         prev_markdown_content = NULL, prev_docx_storage_key = NULL,
+         last_change_summary = NULL, revision_status = 'idle', revision_error = NULL
+       WHERE id = $1`,
+      [draft.id]
+    );
+    if (supersededDocx) { try { await storage.deleteObject(supersededDocx); } catch (e) { /* best effort */ } }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[customer/undo-revision] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/customer/approve-book?token=...
+// The customer approves their memoir as final. This is their commitment.
+// Locks the draft, marks the customer 'approved', and notifies Ken (until the
+// automatic print handoff is built).
+// ---------------------------------------------------------------------------
+router.post('/approve-book', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const customer = await db.queryOne('SELECT id, name, email, status FROM customers WHERE access_token = $1', [token]);
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+
+    const draft = await currentReviewableDraft(customer.id);
+    if (!draft) return res.status(400).json({ error: 'There is no book to approve yet.' });
+    if (draft.revision_status === 'working') {
+      return res.status(400).json({ error: 'Please wait for your current change to finish, then approve.' });
+    }
+
+    await db.query(
+      "UPDATE drafts SET status = 'approved', approved_at = NOW(), revision_status = 'idle' WHERE id = $1",
+      [draft.id]
+    );
+    await db.query("UPDATE customers SET status = 'approved', approved_at = NOW() WHERE id = $1", [customer.id]);
+
+    // Notify Ken (the print handoff is manual until the Lulu print API is wired).
+    try {
+      const subject = '✅ ' + customer.name + ' approved their book — ready to print';
+      const adminLink = 'https://www.bcsmemorybox.com/admin.html';
+      const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">A customer approved their book</h2>' +
+'<p><strong>' + escapeHtml(customer.name) + '</strong> (' + escapeHtml(customer.email) + ') read their memoir, made any changes they wanted, and approved it as final (draft v' + draft.version + ').</p>' +
+'<p>It is ready to be printed.</p>' +
+'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'</div>';
+      await sendEmail('kbakerbcs1@gmail.com', subject, html);
+    } catch (e) { console.error('[approve-book] could not email Ken: ' + e.message); }
+
+    res.json({ ok: true, message: 'Your book is approved.' });
+  } catch (err) {
+    console.error('[customer/approve-book] error:', err);
+    res.status(500).json({ error: 'Something went wrong approving your book. Please try again.' });
   }
 });
 

@@ -429,7 +429,10 @@ function renderDraftReady(data) {
       '<p>Here is your story, right below on this page. Nothing is final yet &mdash; read it over, and if you\u2019d like anything changed, just use the \u201CWant a revision?\u201D box further down. Two rounds of revisions are included.</p>' +
       photoNote +
     '</div>' +
+    renderChangeBanner(memoir) +
     renderMemoirReader(memoir, photos) +
+    renderRevisePanel(memoir) +
+    renderApproveCard(memoir) +
     '<div class="card">' +
       '<h2>Want a copy to keep?</h2>' +
       '<p>You can download your memoir as a Word document to save, print, or share with family.</p>' +
@@ -437,7 +440,192 @@ function renderDraftReady(data) {
     '</div>' +
     renderRecordingsPlayback(recordings) +
     addMoreCard() +
-    revisionRequestCard() + (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
+    (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
+}
+
+// ---- Voice revisions + self-approval (Step 3) ------------------------------
+// Banner shown ABOVE the reader: reflects the current revision state.
+function renderChangeBanner(memoir) {
+  if (!memoir) return '';
+  var st = memoir.revisionStatus || 'idle';
+  if (st === 'working') {
+    setTimeout(startRevisionPoll, 120);
+    return '<div class="card" style="border-left:5px solid #8b5a2b;">' +
+        '<div class="loading"><div class="spinner"></div>' +
+        '<p style="font-size:17px;"><strong>Making your change…</strong> This can take a minute or two. ' +
+        'This page will update all by itself — you don’t have to do anything.</p></div>' +
+      '</div>';
+  }
+  if (st === 'applied' && memoir.changeSummary) {
+    return '<div class="card" style="border-left:5px solid #2a6b3a;background:#f2f8f3;">' +
+        '<div class="eyebrow" style="color:#2a6b3a;">Here’s what I changed</div>' +
+        '<p style="font-size:20px;margin:6px 0 4px;">' + escapeHtml(memoir.changeSummary) + '</p>' +
+        '<p class="muted" style="font-size:15px;">Read it over below. If that’s right, keep it. If not, undo it and you can try again.</p>' +
+        '<div style="margin-top:14px;">' +
+          '<button class="btn btn-large" id="keep-btn" style="background:#2a6b3a;margin:0 10px 8px 0;">Yes, keep this change</button>' +
+          '<button class="btn btn-secondary" id="undo-btn">Undo this change</button>' +
+        '</div>' +
+        '<p id="revise-status" class="muted" style="margin-top:8px;font-size:14px;"></p>' +
+      '</div>';
+  }
+  if (st === 'error') {
+    return '<div class="card" style="border-left:5px solid #c0392b;background:#fdf3f2;">' +
+        '<p style="font-size:17px;"><strong style="color:#c0392b;">I had a little trouble with that change.</strong></p>' +
+        '<p class="muted" style="font-size:15px;">Nothing was changed — your story is exactly as it was. Please try again below, saying it a little more slowly.</p>' +
+      '</div>';
+  }
+  return '';
+}
+
+// The voice recorder for making a change. Hidden while a change is being made
+// or is waiting for keep/undo, so the customer handles one change at a time.
+function renderRevisePanel(memoir) {
+  var st = memoir ? (memoir.revisionStatus || 'idle') : 'idle';
+  if (st === 'working' || st === 'applied') return '';
+  return '<div class="card">' +
+      '<h2>Want to change anything?</h2>' +
+      '<p>Just tell me out loud — no typing. Press the button, say what you’d like changed (for example, “My father was born in 1932, not 1928,” or “Add a little more about opening the shop”), then press Stop. I’ll make the change and show you exactly what I did.</p>' +
+      '<div style="text-align:center;margin-top:10px;">' +
+        '<button class="btn btn-large" id="revise-rec">● Tell me your change</button>' +
+        '<span id="revise-timer" style="display:none;margin-left:12px;font-size:18px;color:#8b5a2b;">0:00</span>' +
+      '</div>' +
+      '<p id="revise-msg" class="muted" style="text-align:center;margin-top:10px;font-size:14px;"></p>' +
+    '</div>';
+}
+
+// The final "This is my book" approval. Hidden until any pending change is
+// kept or undone, so they approve exactly what they see.
+function renderApproveCard(memoir) {
+  var st = memoir ? (memoir.revisionStatus || 'idle') : 'idle';
+  if (st === 'working' || st === 'applied') return '';
+  return '<div class="card" style="text-align:center;background:#faf5ea;border:1px solid #e8dfc9;">' +
+      '<h2>Happy with your book?</h2>' +
+      '<p>When it reads just the way you want, approve it. That tells us it’s final and ready to become your hardcover — nothing changes after this without you.</p>' +
+      '<button class="btn btn-large" id="approve-btn" style="background:#2a6b3a;">✓ This is my book — approve it</button>' +
+      '<p id="approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+    '</div>';
+}
+
+// The state after the customer approves their own book as final.
+function renderApproved(data) {
+  var customer = data.customer;
+  var photos = data.photos || [];
+  var recordings = data.recordings || [];
+  var memoir = data.memoir;
+  var token = getToken();
+  var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
+  var first = (customer.name || '').split(' ')[0] || '';
+  return renderStatusBar('delivered') +
+    '<div class="card" style="text-align:center;background:#f2f8f3;border:1px solid #cfe6d5;">' +
+      '<div class="eyebrow" style="color:#2a6b3a;">Approved</div>' +
+      '<h1>Your book is approved.</h1>' +
+      '<p>Thank you, ' + escapeHtml(first) + '. You’ve approved your memoir as final — it’s on its way to becoming your hardcover book. You can still read it any time right here.</p>' +
+      '<p style="margin-top:14px;"><a class="btn" href="' + dl + '" style="text-decoration:none;">Download a copy (.docx)</a></p>' +
+    '</div>' +
+    renderMemoirReader(memoir, photos) +
+    renderRecordingsPlayback(recordings);
+}
+
+// Poll while a voice change is being applied; reload when it's ready.
+var __revPollActive = false;
+function startRevisionPoll() {
+  if (__revPollActive) return;
+  __revPollActive = true;
+  var token = getToken();
+  var tries = 0;
+  var iv = setInterval(async function () {
+    tries++;
+    if (tries > 90) { clearInterval(iv); window.location.reload(); return; } // ~7.5 min safety
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/me?token=' + encodeURIComponent(token));
+      var d = await resp.json();
+      var st = (d && d.memoir) ? d.memoir.revisionStatus : null;
+      if (st && st !== 'working') { clearInterval(iv); window.location.reload(); }
+    } catch (e) { /* keep polling */ }
+  }, 5000);
+}
+
+// Wire the voice-revision recorder, keep/undo, and approve buttons.
+function bindReviseHandlers() {
+  var token = getToken();
+
+  var recBtn = document.getElementById('revise-rec');
+  if (recBtn) {
+    var timerEl = document.getElementById('revise-timer');
+    var msgEl = document.getElementById('revise-msg');
+    var mediaRecorder = null, stream = null, chunks = [], seconds = 0, timer = null;
+    recBtn.addEventListener('click', async function () {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+        catch (e) { msgEl.textContent = 'Couldn’t reach your microphone. Please allow it in your browser, then try again.'; msgEl.style.color = '#c0392b'; return; }
+        chunks = [];
+        var types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'], mime = '';
+        for (var i = 0; i < types.length; i++) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) { mime = types[i]; break; } }
+        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+        mediaRecorder.onstop = async function () {
+          window.__bcsRecording = false;
+          if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+          var blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          var ext = (mediaRecorder.mimeType || '').indexOf('mp4') !== -1 ? 'm4a' : 'webm';
+          var fd = new FormData(); fd.append('audio', blob, 'revision-' + Date.now() + '.' + ext);
+          recBtn.style.display = 'none';
+          msgEl.innerHTML = '<strong>Sending your change…</strong>'; msgEl.style.color = '#5a4a3a';
+          try {
+            var resp = await fetch(API_BASE + '/api/customer/revise?token=' + encodeURIComponent(token), { method: 'POST', body: fd });
+            var d = await resp.json();
+            if (!resp.ok || !d.ok) throw new Error(d.error || 'Could not start the change.');
+            msgEl.innerHTML = '<strong style="color:#2a5a2a;">Got it — making your change now…</strong>';
+            setTimeout(function () { window.location.reload(); }, 1200);
+          } catch (err) {
+            msgEl.innerHTML = '<strong style="color:#c0392b;">' + (err.message || 'Something went wrong') + '</strong> Please tap the button to try again.';
+            recBtn.style.display = ''; recBtn.textContent = '● Tell me your change';
+          }
+        };
+        mediaRecorder.start(); window.__bcsRecording = true;
+        seconds = 0; timerEl.style.display = 'inline'; timerEl.textContent = '0:00';
+        timer = setInterval(function () { seconds++; var m = Math.floor(seconds / 60), s = seconds % 60; timerEl.textContent = m + ':' + (s < 10 ? '0' : '') + s; }, 1000);
+        recBtn.textContent = '■ Stop'; msgEl.textContent = '';
+      } else if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop(); if (timer) clearInterval(timer); timerEl.style.display = 'none';
+      }
+    });
+  }
+
+  var keepBtn = document.getElementById('keep-btn');
+  if (keepBtn) keepBtn.addEventListener('click', async function () {
+    var s = document.getElementById('revise-status');
+    keepBtn.disabled = true; if (s) { s.style.color = '#5a4a3a'; s.textContent = 'Saving…'; }
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/keep-revision?token=' + encodeURIComponent(token), { method: 'POST' });
+      var d = await resp.json(); if (!resp.ok || !d.ok) throw new Error(d.error || 'Failed');
+      window.location.reload();
+    } catch (err) { if (s) { s.textContent = err.message || 'Something went wrong'; s.style.color = '#c0392b'; } keepBtn.disabled = false; }
+  });
+
+  var undoBtn = document.getElementById('undo-btn');
+  if (undoBtn) undoBtn.addEventListener('click', async function () {
+    var s = document.getElementById('revise-status');
+    undoBtn.disabled = true; if (s) { s.style.color = '#5a4a3a'; s.textContent = 'Undoing…'; }
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/undo-revision?token=' + encodeURIComponent(token), { method: 'POST' });
+      var d = await resp.json(); if (!resp.ok || !d.ok) throw new Error(d.error || 'Failed');
+      window.location.reload();
+    } catch (err) { if (s) { s.textContent = err.message || 'Something went wrong'; s.style.color = '#c0392b'; } undoBtn.disabled = false; }
+  });
+
+  var approveBtn = document.getElementById('approve-btn');
+  if (approveBtn) approveBtn.addEventListener('click', async function () {
+    if (window.__bcsRecording) { alert('You’re still recording a change — please press Stop first.'); return; }
+    if (!confirm('Approve your book as final? You’re saying it reads just the way you want.')) return;
+    var s = document.getElementById('approve-status');
+    approveBtn.disabled = true; approveBtn.textContent = 'Approving…'; if (s) s.textContent = '';
+    try {
+      var resp = await fetch(API_BASE + '/api/customer/approve-book?token=' + encodeURIComponent(token), { method: 'POST' });
+      var d = await resp.json(); if (!resp.ok || !d.ok) throw new Error(d.error || 'Failed');
+      window.location.reload();
+    } catch (err) { if (s) { s.textContent = err.message || 'Something went wrong'; s.style.color = '#c0392b'; } approveBtn.disabled = false; approveBtn.textContent = '✓ This is my book — approve it'; }
+  });
 }
 
 // ---- Inline memoir reader (Step 1) -----------------------------------------
@@ -638,6 +826,7 @@ function renderError(msg) {
     else if (status === 'follow_up')   html = renderFollowUp(data);
     else if (status === 'draft_ready') html = renderDraftReady(data);
     else if (status === 'delivered')   html = renderDelivered(data);
+    else if (status === 'approved')    html = renderApproved(data);
     else if (status === 'error')              html = renderErrorState(data.customer);
     else if (status === 'revision_requested') html = renderRevisionRequested(data.customer);
     else html = renderError('Unknown status: ' + status);
@@ -652,6 +841,7 @@ function renderError(msg) {
     bindPhotoHandler();
     bindDoneHandler(data.customer.status);
     bindRevisionHandler();
+    bindReviseHandlers();
     bindOrderBook();
       bindPhotoDrop();
     bindRecordingTitles();
