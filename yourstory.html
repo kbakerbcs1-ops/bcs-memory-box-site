@@ -426,21 +426,53 @@ function renderDraftReady(data) {
     '<div class="card">' +
       '<div class="eyebrow">Ready</div>' +
       '<h1>Your draft is ready to read.</h1>' +
-      '<p>Here is your story, right below on this page. Nothing is final yet &mdash; read it over, and if you\u2019d like anything changed, just use the \u201CWant a revision?\u201D box further down. Two rounds of revisions are included.</p>' +
+      '<p>Here is your story, just below. Read it over &mdash; nothing is final yet.</p>' +
       photoNote +
     '</div>' +
     renderChangeBanner(memoir) +
     renderMemoirReader(memoir, photos) +
-    renderRevisePanel(memoir) +
-    renderApproveCard(memoir) +
-    '<div class="card">' +
-      '<h2>Want a copy to keep?</h2>' +
-      '<p>You can download your memoir as a Word document to save, print, or share with family.</p>' +
-      '<p style="text-align:center;"><a class="btn btn-large" href="' + dl + '" style="display:inline-block;text-decoration:none;">Download your draft (.docx)</a></p>' +
-    '</div>' +
-    renderRecordingsPlayback(recordings) +
-    addMoreCard() +
-    (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
+    renderDecisionCard(memoir) +
+    renderMoreOptions(recordings, dl, customer);
+}
+
+// ONE clear decision after the memoir: change it (by voice) or approve it.
+// Hidden while a change is being made or waiting on keep/undo (the banner
+// handles those), so the customer is never looking at competing choices.
+function renderDecisionCard(memoir) {
+  var st = memoir ? (memoir.revisionStatus || 'idle') : 'idle';
+  if (st === 'working' || st === 'applied') return '';
+  return '<div class="card" style="text-align:center;background:#faf7f0;border:1px solid #e8dfc9;">' +
+      '<h2>Is this the way you want it?</h2>' +
+      '<p style="max-width:520px;margin:0 auto;">If something should be different, just tell me out loud &mdash; no typing. If it reads just right, approve it and it becomes your book.</p>' +
+      '<div style="margin-top:18px;">' +
+        '<button class="btn btn-large" id="revise-rec">\u25CF Tell me a change</button>' +
+        '<span id="revise-timer" style="display:none;margin-left:12px;font-size:18px;color:#8b5a2b;">0:00</span>' +
+        '<p id="revise-msg" class="muted" style="margin-top:8px;font-size:14px;"></p>' +
+      '</div>' +
+      '<p style="margin:20px 0 12px;color:#9a8b78;font-size:15px;">&mdash; or, if it\u2019s perfect &mdash;</p>' +
+      '<button class="btn btn-large" id="approve-btn" style="background:#2a6b3a;">\u2713 Yes &mdash; this is my book</button>' +
+      '<p id="approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+      '<p class="muted" style="margin-top:12px;font-size:13px;">Nothing changes after you approve without you.</p>' +
+    '</div>';
+}
+
+// Everything secondary, tucked into one collapsed panel so it never competes
+// with the main decision: a Word copy, listening back, adding a new story, and
+// hardcover details. Named so a customer knows what's inside without opening it.
+function renderMoreOptions(recordings, dl, customer) {
+  var bookCard = (customer.plan === 'story') ? orderBookCard() : includedBookCard(customer.plan);
+  return '<details class="card" style="background:#fbf9f4;">' +
+      '<summary style="cursor:pointer;font-family:Georgia,serif;font-size:18px;color:#8b5a2b;font-weight:bold;">More options &mdash; a copy to keep, your recordings, add another story</summary>' +
+      '<div style="margin-top:16px;">' +
+        '<p style="margin:0 0 6px;"><a class="btn btn-secondary" href="' + dl + '" style="text-decoration:none;">Download a Word copy</a></p>' +
+        '<p class="muted" style="margin:0 0 20px;font-size:14px;">To save, print, or share it from your computer.</p>' +
+        '<p style="margin:0 0 6px;"><button class="btn btn-secondary" onclick="reopenStory(this)">Record another story</button></p>' +
+        '<p class="muted" style="margin:0 0 6px;font-size:14px;">Remembered a whole new memory? Add it and we\u2019ll fold it in. (For a small fix, use \u201CTell me a change\u201D above instead.)</p>' +
+        '<p id="reopen-status" class="muted" style="margin:0 0 8px;font-size:14px;"></p>' +
+        renderRecordingsPlayback(recordings) +
+        bookCard +
+      '</div>' +
+    '</details>';
 }
 
 // ---- Voice revisions + self-approval (Step 3) ------------------------------
