@@ -7,6 +7,16 @@
 
 const FRONTEND_BASE = 'https://www.bcsmemorybox.com';
 
+// Ken's inbox. Emails addressed here are notifications FROM the assistant to Ken,
+// so they show the sender "Bullet". Everything else (customer-facing mail) keeps
+// the "BCS Memory Box" brand.
+const ADMIN_EMAIL = 'kbakerbcs1@gmail.com';
+const FROM_BULLET = 'Bullet <ops@bcsmemorybox.com>';
+const FROM_BRAND = 'BCS Memory Box <ops@bcsmemorybox.com>';
+function fromFor(to) {
+  return to === ADMIN_EMAIL ? FROM_BULLET : FROM_BRAND;
+}
+
 function portalUrlFor(accessToken) {
   return FRONTEND_BASE + '/yourstory.html?token=' + encodeURIComponent(accessToken);
 }
@@ -72,7 +82,7 @@ async function sendEmail(to, subject, html) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'BCS Memory Box <ops@bcsmemorybox.com>',
+      from: fromFor(to),
       to: to,
       reply_to: 'kbakerbcs1@gmail.com',
       subject: subject,
@@ -89,4 +99,4 @@ async function sendStoryLink(to, name, accessToken, firstTime) {
   return sendEmail(to, subject, html);
 }
 
-module.exports = { sendEmail, sendStoryLink, storyLinkEmail, portalUrlFor, escapeHtml };
+module.exports = { sendEmail, sendStoryLink, storyLinkEmail, portalUrlFor, escapeHtml, ADMIN_EMAIL, fromFor };

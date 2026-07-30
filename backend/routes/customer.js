@@ -681,7 +681,10 @@ async function sendEmail(to, subject, html) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'BCS Memory Box <ops@bcsmemorybox.com>',
+      // Notifications to Ken show sender "Bullet"; customer mail stays branded.
+      from: to === 'kbakerbcs1@gmail.com'
+        ? 'Bullet <ops@bcsmemorybox.com>'
+        : 'BCS Memory Box <ops@bcsmemorybox.com>',
       to: to,
       reply_to: 'kbakerbcs1@gmail.com',
       subject: subject,

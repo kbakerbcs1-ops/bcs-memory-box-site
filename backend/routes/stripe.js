@@ -183,6 +183,27 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
       } catch (mailErr) {
         console.error('[stripe/webhook] welcome email failed (non-fatal):', mailErr.message);
       }
+
+      // Notify Ken that a new customer just paid. Non-fatal: a mail failure here
+      // must never make the webhook error (Stripe would keep retrying).
+      try {
+        const planName = (PLANS[session.metadata && session.metadata.plan] || {}).name
+          || 'Memory Box';
+        const custName = customer.name || customer.email;
+        const subject = '🎉 New customer just paid — ' + custName;
+        const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">A new customer just paid 🎉</h2>' +
+'<p>Good news, Ken — <strong>' + mailer.escapeHtml(custName) + '</strong> (' + mailer.escapeHtml(customer.email) + ') just paid for the <strong>' + mailer.escapeHtml(planName) + '</strong> and is ready to start recording their story.</p>' +
+'<p>I’ve already sent them their welcome email with the link to begin. There’s nothing you need to do right now — I’ll let you know as soon as their draft is ready to review.</p>' +
+'<p><a href="' + FRONTEND_BASE + '/admin.html" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'<p style="color:#8b5a2b;margin-top:24px;">— Bullet 🐶</p>' +
+'</div>';
+        await mailer.sendEmail(mailer.ADMIN_EMAIL, subject, html);
+        console.log('[stripe/webhook] "new customer paid" notice sent to Ken');
+      } catch (notifyErr) {
+        console.error('[stripe/webhook] admin paid-notice failed (non-fatal):', notifyErr.message);
+      }
     } else {
       console.log('[stripe/webhook] received event ' + event.type + ' — not handled, ignoring');
     }

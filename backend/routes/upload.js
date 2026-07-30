@@ -6,6 +6,7 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../lib/db');
 const storage = require('../lib/storage');
+const mailer = require('../lib/mailer');
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Missing access token' });
 
     const customer = await db.queryOne(
-      'SELECT id, status, paid_at FROM customers WHERE access_token = $1',
+      'SELECT id, status, paid_at, name, email FROM customers WHERE access_token = $1',
       [token]
     );
     if (!customer) return res.status(404).json({ error: 'Account not found' });
@@ -36,6 +37,19 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
     const audio = req.file;
     if (!audio) return res.status(400).json({ error: 'No audio file uploaded.' });
+
+    // Is this the customer's very first recording? (Checked before the insert so
+    // we can send Ken a one-time "they just started recording" notice below.)
+    let isFirstClip = false;
+    try {
+      const prior = await db.queryOne(
+        'SELECT COUNT(*)::int AS n FROM recordings WHERE customer_id = $1',
+        [customer.id]
+      );
+      isFirstClip = !!prior && prior.n === 0;
+    } catch (e) {
+      console.error('[upload] first-clip check failed (non-fatal): ' + e.message);
+    }
 
     // Derive a safe extension from the original filename, or fall back to mime type
     const ext = (audio.originalname || '').split('.').pop().toLowerCase() ||
@@ -65,6 +79,27 @@ router.post('/', upload.single('audio'), async (req, res) => {
           [recording.id, questionId, customer.id]
         );
       } catch (e) { console.error('[upload] could not link follow-up answer: ' + e.message); }
+    }
+
+    // First recording for this customer → tell Ken they've started (once).
+    // Non-fatal: a mail failure must never fail the upload.
+    if (isFirstClip) {
+      try {
+        const custName = customer.name || customer.email;
+        const subject = custName + ' just started recording';
+        const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">' + mailer.escapeHtml(custName) + ' just started recording 🎙️</h2>' +
+'<p><strong>' + mailer.escapeHtml(custName) + '</strong> (' + mailer.escapeHtml(customer.email || '') + ') just saved their first recording — they’re telling their story right now.</p>' +
+'<p>Nothing to do on your end. I’ll email you again when they finish and their draft is ready for you to review.</p>' +
+'<p><a href="https://www.bcsmemorybox.com/admin.html" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'<p style="color:#8b5a2b;margin-top:24px;">— Bullet 🐶</p>' +
+'</div>';
+        await mailer.sendEmail(mailer.ADMIN_EMAIL, subject, html);
+        console.log('[upload] "started recording" notice sent to Ken for customer ' + customer.id);
+      } catch (notifyErr) {
+        console.error('[upload] admin start-notice failed (non-fatal): ' + notifyErr.message);
+      }
     }
 
     res.json({ ok: true, recording });
