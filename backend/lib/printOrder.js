@@ -19,6 +19,8 @@
 
 const db = require('./db');
 const lulu = require('./lulu');
+const coverPdf = require('./coverPdf');
+const storage = require('./storage');
 
 // Plans that include a physical hardcover book.
 const HARDCOVER_PLANS = new Set(['hardcover', 'legacy']);
@@ -112,6 +114,24 @@ async function autoOrderOnApproval(customer, draft) {
          total, currency, 'cost above ceiling ($' + total + ' > $' + COST_CEILING + ')']
       );
       return { ordered: false, reason: 'cost_anomaly', total, currency };
+    }
+
+    // --- Refine the cover to Lulu's EXACT spine for this page count ---
+    // (belt-and-suspenders on top of the validated offline formula).
+    try {
+      const dims = await lulu.calculateCoverDimensions({
+        podPackageId: lulu.DEFAULT_POD_PACKAGE_ID, pageCount: assets.page_count, unit: 'in',
+      });
+      const widthIn = Number(dims && dims.width);
+      const spineIn = widthIn - 18.75; // 2*8.5 trim + 2*0.875 wrap/bleed
+      if (spineIn > 0.05) {
+        const cov = await coverPdf.renderCoverPdf({ name: customer.name, pageCount: assets.page_count, spineWidthIn: spineIn });
+        const coverKey = 'customers/' + customer.id + '/print/cover-exact-' + externalId + '.pdf';
+        await storage.uploadObject(coverKey, cov.buffer, 'application/pdf');
+        await db.query('UPDATE drafts SET cover_pdf_key = $2 WHERE id = $1', [draft.id, coverKey]);
+      }
+    } catch (e) {
+      console.error('[autoOrder] cover-dimension refine skipped (using generated cover): ' + e.message);
     }
 
     // Record intent BEFORE submitting (so a crash mid-call can't lose track).

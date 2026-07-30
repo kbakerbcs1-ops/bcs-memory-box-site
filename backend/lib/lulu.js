@@ -170,6 +170,17 @@ async function createPrintJob({
   return apiFetch('/print-jobs/', 'POST', body);
 }
 
+// Exact wraparound cover dimensions for a given book (spine depends on page
+// count + paper). Returns Lulu's { width, height, unit }. Used to size the
+// generated cover precisely before ordering.
+async function calculateCoverDimensions({ podPackageId, pageCount, unit }) {
+  return apiFetch('/print-jobs/cover-dimensions/', 'POST', {
+    pod_package_id: podPackageId || DEFAULT_POD_PACKAGE_ID,
+    interior_page_count: pageCount,
+    unit: unit || 'in',
+  });
+}
+
 async function getPrintJob(id) {
   return apiFetch('/print-jobs/' + encodeURIComponent(id) + '/', 'GET');
 }
@@ -185,6 +196,7 @@ module.exports = {
   DEFAULT_POD_PACKAGE_ID,
   getToken,
   calculateCost,
+  calculateCoverDimensions,
   createPrintJob,
   getPrintJob,
   cancelPrintJob,

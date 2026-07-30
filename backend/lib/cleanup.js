@@ -20,6 +20,7 @@
 const db = require('./db');
 const storage = require('./storage');
 const bookPdf = require('./bookPdf');
+const coverPdf = require('./coverPdf');
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType,
   HeadingLevel, LevelFormat, PageOrientation, ImageRun,
@@ -190,8 +191,8 @@ async function runCleanupPipeline(customerId) {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     );
 
-    // 5b. Render the print-ready interior PDF for Lulu (best-effort).
-    let interiorPdfKey = null, pageCount = null;
+    // 5b. Render the print-ready interior + cover PDFs for Lulu (best-effort).
+    let interiorPdfKey = null, pageCount = null, coverPdfKey = null;
     try {
       const pdf = await renderAndUploadInteriorPdf(customerId, memoirMarkdown, photos, 'v1');
       interiorPdfKey = pdf.key; pageCount = pdf.pageCount;
@@ -199,20 +200,28 @@ async function runCleanupPipeline(customerId) {
     } catch (e) {
       console.error('[cleanup] interior PDF failed (non-fatal): ' + e.message);
     }
+    try {
+      const cov = await renderAndUploadCoverPdf(customerId, customer.name, pageCount || 24, 'cover-v1');
+      coverPdfKey = cov.key;
+      console.log('[cleanup] cover PDF rendered (spine ' + cov.spineIn.toFixed(3) + ' in)');
+    } catch (e) {
+      console.error('[cleanup] cover PDF failed (non-fatal): ' + e.message);
+    }
 
     // 6. Save draft row
     const draft = await db.queryOne(
-      `INSERT INTO drafts (customer_id, version, markdown_content, docx_storage_key, status, interior_pdf_key, page_count)
-       VALUES ($1, 1, $2, $3, 'ready_for_review', $4, $5)
+      `INSERT INTO drafts (customer_id, version, markdown_content, docx_storage_key, status, interior_pdf_key, cover_pdf_key, page_count)
+       VALUES ($1, 1, $2, $3, 'ready_for_review', $4, $5, $6)
        ON CONFLICT (customer_id, version) DO UPDATE
        SET markdown_content = EXCLUDED.markdown_content,
            docx_storage_key = EXCLUDED.docx_storage_key,
            status = EXCLUDED.status,
            interior_pdf_key = EXCLUDED.interior_pdf_key,
+           cover_pdf_key = EXCLUDED.cover_pdf_key,
            page_count = EXCLUDED.page_count,
            created_at = NOW()
        RETURNING id`,
-      [customerId, memoirMarkdown, docxKey, interiorPdfKey, pageCount]
+      [customerId, memoirMarkdown, docxKey, interiorPdfKey, coverPdfKey, pageCount]
     );
 
     // 7. FIRST DRAFT ONLY: ask the storyteller a few gentle follow-up questions
@@ -443,6 +452,16 @@ async function renderAndUploadInteriorPdf(customerId, markdown, photos, tag) {
   const key = 'customers/' + customerId + '/print/' + (tag || 'interior') + '-' + Date.now() + '.pdf';
   await storage.uploadObject(key, buffer, 'application/pdf');
   return { key, pageCount };
+}
+
+// Render the wraparound cover for this book (spine sized to the page count) and
+// upload it to R2. Returns { key, spineIn }. The exact spine is refined against
+// Lulu's cover-dimensions API at order time; this uses the validated formula.
+async function renderAndUploadCoverPdf(customerId, name, pageCount, tag) {
+  const { buffer, spineIn } = await coverPdf.renderCoverPdf({ name: name || 'Your Name', pageCount });
+  const key = 'customers/' + customerId + '/print/' + (tag || 'cover') + '-' + Date.now() + '.pdf';
+  await storage.uploadObject(key, buffer, 'application/pdf');
+  return { key, spineIn };
 }
 
 async function renderMemoirDocx(markdown, photos) {
@@ -810,13 +829,19 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     );
 
-    // Regenerate the print-ready interior PDF to match the revision (best-effort).
-    let newInteriorKey = null, newPageCount = null;
+    // Regenerate the print-ready interior + cover PDFs to match the revision.
+    let newInteriorKey = null, newPageCount = null, newCoverKey = null;
     try {
       const pdf = await renderAndUploadInteriorPdf(customerId, revisedMarkdown, photos, 'rev');
       newInteriorKey = pdf.key; newPageCount = pdf.pageCount;
     } catch (e) {
       console.error('[revision] interior PDF failed (non-fatal): ' + e.message);
+    }
+    try {
+      const cov = await renderAndUploadCoverPdf(customerId, customer ? customer.name : '', newPageCount || 24, 'cover-rev');
+      newCoverKey = cov.key;
+    } catch (e) {
+      console.error('[revision] cover PDF failed (non-fatal): ' + e.message);
     }
 
     await db.query(
@@ -829,9 +854,10 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
          revision_status = 'applied',
          revision_error = NULL,
          interior_pdf_key = COALESCE($5, interior_pdf_key),
-         page_count = COALESCE($6, page_count)
+         cover_pdf_key = COALESCE($6, cover_pdf_key),
+         page_count = COALESCE($7, page_count)
        WHERE id = $4`,
-      [revisedMarkdown, newDocxKey, changeSummary, draftId, newInteriorKey, newPageCount]
+      [revisedMarkdown, newDocxKey, changeSummary, draftId, newInteriorKey, newCoverKey, newPageCount]
     );
 
     try { await storage.deleteObject(instructionStorageKey); } catch (e) { /* best effort */ }
