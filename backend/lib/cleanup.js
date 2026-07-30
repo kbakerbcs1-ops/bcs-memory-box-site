@@ -19,6 +19,7 @@
 
 const db = require('./db');
 const storage = require('./storage');
+const bookPdf = require('./bookPdf');
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType,
   HeadingLevel, LevelFormat, PageOrientation, ImageRun,
@@ -189,17 +190,29 @@ async function runCleanupPipeline(customerId) {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     );
 
+    // 5b. Render the print-ready interior PDF for Lulu (best-effort).
+    let interiorPdfKey = null, pageCount = null;
+    try {
+      const pdf = await renderAndUploadInteriorPdf(customerId, memoirMarkdown, photos, 'v1');
+      interiorPdfKey = pdf.key; pageCount = pdf.pageCount;
+      console.log('[cleanup] interior PDF rendered (' + pageCount + ' pages)');
+    } catch (e) {
+      console.error('[cleanup] interior PDF failed (non-fatal): ' + e.message);
+    }
+
     // 6. Save draft row
     const draft = await db.queryOne(
-      `INSERT INTO drafts (customer_id, version, markdown_content, docx_storage_key, status)
-       VALUES ($1, 1, $2, $3, 'ready_for_review')
+      `INSERT INTO drafts (customer_id, version, markdown_content, docx_storage_key, status, interior_pdf_key, page_count)
+       VALUES ($1, 1, $2, $3, 'ready_for_review', $4, $5)
        ON CONFLICT (customer_id, version) DO UPDATE
        SET markdown_content = EXCLUDED.markdown_content,
            docx_storage_key = EXCLUDED.docx_storage_key,
            status = EXCLUDED.status,
+           interior_pdf_key = EXCLUDED.interior_pdf_key,
+           page_count = EXCLUDED.page_count,
            created_at = NOW()
        RETURNING id`,
-      [customerId, memoirMarkdown, docxKey]
+      [customerId, memoirMarkdown, docxKey, interiorPdfKey, pageCount]
     );
 
     // 7. FIRST DRAFT ONLY: ask the storyteller a few gentle follow-up questions
@@ -420,6 +433,16 @@ function photoParagraphs(p) {
     }));
   }
   return out;
+}
+
+// Render the print-ready interior PDF for Lulu and upload it to R2. Returns
+// { key, pageCount }. Best-effort: a PDF failure must not break draft creation
+// (the .docx is still produced), so callers wrap this in try/catch.
+async function renderAndUploadInteriorPdf(customerId, markdown, photos, tag) {
+  const { buffer, pageCount } = await bookPdf.renderMemoirPdf(markdown, photos);
+  const key = 'customers/' + customerId + '/print/' + (tag || 'interior') + '-' + Date.now() + '.pdf';
+  await storage.uploadObject(key, buffer, 'application/pdf');
+  return { key, pageCount };
 }
 
 async function renderMemoirDocx(markdown, photos) {
@@ -787,6 +810,15 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     );
 
+    // Regenerate the print-ready interior PDF to match the revision (best-effort).
+    let newInteriorKey = null, newPageCount = null;
+    try {
+      const pdf = await renderAndUploadInteriorPdf(customerId, revisedMarkdown, photos, 'rev');
+      newInteriorKey = pdf.key; newPageCount = pdf.pageCount;
+    } catch (e) {
+      console.error('[revision] interior PDF failed (non-fatal): ' + e.message);
+    }
+
     await db.query(
       `UPDATE drafts SET
          prev_markdown_content = markdown_content,
@@ -795,9 +827,11 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
          docx_storage_key = $2,
          last_change_summary = $3,
          revision_status = 'applied',
-         revision_error = NULL
+         revision_error = NULL,
+         interior_pdf_key = COALESCE($5, interior_pdf_key),
+         page_count = COALESCE($6, page_count)
        WHERE id = $4`,
-      [revisedMarkdown, newDocxKey, changeSummary, draftId]
+      [revisedMarkdown, newDocxKey, changeSummary, draftId, newInteriorKey, newPageCount]
     );
 
     try { await storage.deleteObject(instructionStorageKey); } catch (e) { /* best effort */ }

@@ -15,6 +15,7 @@ const photoRoutes    = require('./routes/photo');
 const adminRoutes    = require('./routes/admin');
 const finishRoutes   = require('./routes/finish');
 const voiceRoutes    = require('./routes/voice');
+const printRoutes    = require('./routes/print');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers } = require('./lib/cleanup');
 
@@ -109,6 +110,7 @@ app.use('/api/customer/upload-photo', photoRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/customer/finish-recording', finishRoutes);
 app.use('/api/voice', voiceRoutes);          // public 'listen' links for QR-in-the-book
+app.use('/api/print', printRoutes);          // public print-ready PDFs Lulu fetches for auto-print
 
 // ============================================================================
 // /trial — original free-trial endpoint (unchanged, still serves the homepage

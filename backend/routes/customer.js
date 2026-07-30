@@ -540,6 +540,22 @@ router.post('/approve-book', async (req, res) => {
       return res.status(400).json({ error: 'Please wait for your current change to finish, then approve.' });
     }
 
+    // Save the shipping address for the included hardcover, if one was provided
+    // with the approval (collected in the approval step for hardcover/legacy plans).
+    const ship = (req.body && req.body.shipping) || null;
+    if (ship && typeof ship === 'object') {
+      const s = (v, max) => String(v == null ? '' : v).trim().slice(0, max || 200);
+      const name = s(ship.name, 120), a1 = s(ship.address1, 200), city = s(ship.city, 120), zip = s(ship.zip, 40);
+      if (name && a1 && city && zip) {
+        await db.query(
+          `UPDATE customers SET ship_name=$2, ship_address1=$3, ship_address2=$4, ship_city=$5,
+             ship_state=$6, ship_zip=$7, ship_country=$8, ship_phone=$9 WHERE id = $1`,
+          [customer.id, name, a1, s(ship.address2, 120), city, s(ship.state, 80), zip,
+           s(ship.country, 80) || 'US', s(ship.phone, 40)]
+        );
+      }
+    }
+
     await db.query(
       "UPDATE drafts SET status = 'approved', approved_at = NOW(), revision_status = 'idle' WHERE id = $1",
       [draft.id]
