@@ -24,13 +24,22 @@ const ENV = (process.env.LULU_ENV || 'sandbox').toLowerCase();
 // .trim() defends against a stray space or newline getting pasted with the key.
 const CLIENT_KEY = (process.env.LULU_CLIENT_KEY || '').trim();
 const CLIENT_SECRET = (process.env.LULU_CLIENT_SECRET || '').trim();
+// Preferred: the single "Base64 Encoded Key & Secret" string Lulu shows on the
+// API Keys page (with or without the leading "Basic "). If set, we use it as the
+// auth header directly — no key/secret pairing to get wrong. Falls back to
+// computing it from CLIENT_KEY:CLIENT_SECRET.
+const BASIC_AUTH = (process.env.LULU_BASIC_AUTH || '').trim();
+function authHeader() {
+  if (BASIC_AUTH) return /^basic\s/i.test(BASIC_AUTH) ? BASIC_AUTH : ('Basic ' + BASIC_AUTH);
+  return 'Basic ' + Buffer.from(CLIENT_KEY + ':' + CLIENT_SECRET).toString('base64');
+}
 
 const BASE = ENV === 'production'
   ? 'https://api.lulu.com'
   : 'https://api.sandbox.lulu.com';
 const TOKEN_URL = BASE + '/auth/realms/glasstree/protocol/openid-connect/token';
 
-const enabled = !!(CLIENT_KEY && CLIENT_SECRET);
+const enabled = !!(BASIC_AUTH || (CLIENT_KEY && CLIENT_SECRET));
 if (!enabled) {
   console.warn('[lulu] LULU_CLIENT_KEY / LULU_CLIENT_SECRET not set — auto-print is OFF '
     + '(orders fall back to emailing Ken). Set both to enable; LULU_ENV=' + ENV + '.');
@@ -62,13 +71,13 @@ async function getToken() {
   // Try HTTP Basic auth first (Lulu's documented method). If that's rejected,
   // fall back to sending the credentials in the body (client_secret_post) — this
   // covers either Keycloak client-auth configuration without guesswork.
-  const basic = Buffer.from(CLIENT_KEY + ':' + CLIENT_SECRET).toString('base64');
   let resp = await fetch(TOKEN_URL, {
     method: 'POST',
-    headers: { 'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 'Authorization': authHeader(), 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=client_credentials',
   });
-  if (!resp.ok && (resp.status === 400 || resp.status === 401)) {
+  // Fallback only makes sense when we have the raw key+secret (not a pre-made Basic string).
+  if (!resp.ok && (resp.status === 400 || resp.status === 401) && CLIENT_KEY && CLIENT_SECRET && !BASIC_AUTH) {
     resp = await fetch(TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
