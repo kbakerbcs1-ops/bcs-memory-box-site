@@ -6,6 +6,7 @@ const express = require('express');
 const db = require('../lib/db');
 const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
+const lulu = require('../lib/lulu');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 
@@ -562,6 +563,103 @@ router.delete('/voice-clip/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, deleted: r.rowCount });
   } catch (err) {
     console.error('[admin/voice-clip delete] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
+// ===========================================================================
+// PRINT ORDERS — visibility + a real Cancel button for the automatic Lulu
+// hardcover orders. This turns the "24-hour safety window" into something Ken
+// actually controls from his own dashboard: he can see every order and cancel
+// one before Lulu sends it to print.
+// ===========================================================================
+
+// GET /api/admin/print-jobs — every print job, newest first.
+router.get('/print-jobs', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT p.id, p.external_id, p.status, p.lulu_print_job_id, p.lulu_env,
+             p.total_cost, p.currency, p.last_lulu_status, p.tracking_url,
+             p.error, p.created_at, p.updated_at,
+             c.id AS customer_id, c.name AS customer_name, c.email AS customer_email
+        FROM print_jobs p
+        LEFT JOIN customers c ON c.id = p.customer_id
+       ORDER BY p.created_at DESC
+    `);
+    res.json({ ok: true, jobs: rows });
+  } catch (err) {
+    console.error('[admin/print-jobs] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
+// POST /api/admin/print-job/:id/refresh — pull the latest status from Lulu so
+// Ken sees real state (UNPAID / IN_PRODUCTION / SHIPPED) and any tracking URL.
+router.post('/print-job/:id/refresh', requireAdmin, async (req, res) => {
+  try {
+    const job = await db.queryOne(
+      'SELECT id, lulu_print_job_id FROM print_jobs WHERE id = $1', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Print order not found' });
+    if (!job.lulu_print_job_id) {
+      return res.status(400).json({ error: 'This order was never placed with Lulu, so there is nothing to refresh.' });
+    }
+    const remote = await lulu.getPrintJob(job.lulu_print_job_id);
+    const luluStatus = (remote && remote.status && (remote.status.name || remote.status)) || null;
+    let tracking = null;
+    try {
+      const li = remote && remote.line_items && remote.line_items[0];
+      tracking = (li && li.tracking_urls && li.tracking_urls[0])
+        || (remote && remote.tracking_urls && remote.tracking_urls[0]) || null;
+    } catch (_) { /* shape varies; tracking is best-effort */ }
+    await db.query(
+      `UPDATE print_jobs
+         SET last_lulu_status = COALESCE($2, last_lulu_status),
+             tracking_url = COALESCE($3, tracking_url),
+             updated_at = NOW()
+       WHERE id = $1`,
+      [job.id, luluStatus, tracking]
+    );
+    res.json({ ok: true, last_lulu_status: luluStatus, tracking_url: tracking });
+  } catch (err) {
+    console.error('[admin/print-job/refresh] error:', err);
+    res.status(502).json({ error: 'Could not reach Lulu to refresh this order: ' + err.message });
+  }
+});
+
+// POST /api/admin/print-job/:id/cancel — cancel the order. Lulu only allows
+// cancellation before the job enters production; if it is already printing,
+// Lulu rejects it and we tell Ken plainly.
+router.post('/print-job/:id/cancel', requireAdmin, async (req, res) => {
+  try {
+    const job = await db.queryOne(
+      'SELECT id, status, lulu_print_job_id FROM print_jobs WHERE id = $1', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Print order not found' });
+    if (job.status === 'canceled') {
+      return res.json({ ok: true, alreadyCanceled: true, message: 'This order was already canceled.' });
+    }
+    // No real Lulu order behind it (a test-mode 'validated' row, or an 'error'
+    // row that never reached Lulu): just mark it canceled locally.
+    if (!job.lulu_print_job_id) {
+      await db.query(`UPDATE print_jobs SET status='canceled', updated_at=NOW() WHERE id=$1`, [job.id]);
+      return res.json({ ok: true, message: 'Marked as canceled. (No live Lulu order was attached to this one — nothing was charged.)' });
+    }
+    // Ask Lulu to cancel. This fails if the job already entered production.
+    let luluResult;
+    try {
+      luluResult = await lulu.cancelPrintJob(job.lulu_print_job_id);
+    } catch (e) {
+      return res.status(409).json({
+        error: 'Lulu would not cancel this order — it may already be printing or shipped. Nothing was changed. (' + e.message + ')'
+      });
+    }
+    const luluStatus = (luluResult && luluResult.status && (luluResult.status.name || luluResult.status)) || 'CANCELED';
+    await db.query(
+      `UPDATE print_jobs SET status='canceled', last_lulu_status=$2, updated_at=NOW() WHERE id=$1`,
+      [job.id, luluStatus]
+    );
+    res.json({ ok: true, canceled: true, message: 'Order canceled at Lulu. It will not be printed or shipped.', last_lulu_status: luluStatus });
+  } catch (err) {
+    console.error('[admin/print-job/cancel] error:', err);
     res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });

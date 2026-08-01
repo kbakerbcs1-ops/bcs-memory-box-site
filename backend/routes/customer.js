@@ -588,6 +588,7 @@ router.post('/approve-book', async (req, res) => {
 
     try {
       const adminLink = 'https://www.bcsmemorybox.com/admin.html';
+      const ordersLink = 'https://www.bcsmemorybox.com/admin.html#print-orders';
       let subject, html;
       if (order.ordered) {
         // The order was placed automatically.
@@ -597,8 +598,8 @@ router.post('/approve-book', async (req, res) => {
 '<h2 style="color:#8b5a2b;">Hardcover ordered — nothing for you to do 📖</h2>' +
 '<p><strong>' + escapeHtml(customer.name) + '</strong> (' + escapeHtml(customer.email) + ') approved their memoir (v' + draft.version + '), and I placed their hardcover order with Lulu automatically.</p>' +
 '<p>Total <strong>$' + escapeHtml(String(order.total)) + ' ' + escapeHtml(order.currency || 'USD') + '</strong>' + (order.luluId ? ' · Lulu job <strong>' + escapeHtml(order.luluId) + '</strong>' : '') + (order.env === 'sandbox' ? ' · <em>sandbox test</em>' : '') + '.</p>' +
-'<p>It won’t go to the printer for about 24 hours, so there’s a window to cancel from the admin dashboard if anything looks wrong. Otherwise Lulu prints and ships it to the customer.</p>' +
-'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'<p>It won’t go to the printer for about 24 hours, so you have a window to stop it if anything looks wrong. To cancel: open your dashboard, go to <strong>Print Orders</strong>, and press <strong>Cancel order</strong> on this one. Otherwise Lulu prints and ships it to the customer automatically — you don’t need to do anything.</p>' +
+'<p><a href="' + ordersLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open Print Orders</a></p>' +
 '<p style="color:#8b5a2b;margin-top:24px;">— Bullet 🐶</p>' +
 '</div>';
       } else {

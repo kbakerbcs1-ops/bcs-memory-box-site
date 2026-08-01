@@ -46,6 +46,10 @@
   .status-error{background:#fcecea;color:#c0392b;}
   .status-revision_requested{background:#fef6e7;color:#7c4a03;}
   .status-ready_for_review{background:#eaf5ea;color:#2a5a2a;}
+  .status-submitted{background:#eaf5ea;color:#2a5a2a;}
+  .status-validated{background:#eef4fb;color:#2c5e8d;}
+  .status-created{background:#f5e8ff;color:#6b2c8d;}
+  .status-canceled{background:#e0e0e0;color:#555;}
   .muted{color:#888;font-size:13px;}
 
   /* Customer detail */
@@ -294,7 +298,7 @@ async function showDashboard() {
     var html =
       '<div class="toolbar">' +
         '<h1>Customers</h1>' +
-        '<div class="summary">' + rows.length + ' total</div>' +
+        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-print-orders">📦 Print Orders</button></div>' +
       '</div>' +
       '<div style="border:1px solid #e0d8c8;border-radius:10px;padding:18px 20px;margin:0 0 22px;background:#faf7f0;">' +
         '<h2 style="margin:0 0 4px;font-size:18px;">Add a free tester</h2>' +
@@ -327,6 +331,8 @@ async function showDashboard() {
       html += '</tbody></table>';
     }
     document.getElementById('main').innerHTML = html;
+    var poBtn = document.getElementById('view-print-orders');
+    if (poBtn) poBtn.addEventListener('click', showPrintOrders);
     var compBtn = document.getElementById('comp-add-btn');
     if (compBtn) {
       compBtn.addEventListener('click', async function(){
@@ -355,6 +361,75 @@ async function showDashboard() {
     if (e.message !== 'Unauthorized') {
       document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
     }
+  }
+}
+
+// ============================================================================
+// Print Orders view — see every automatic Lulu hardcover order and cancel one
+// within the safety window (before Lulu starts printing).
+// ============================================================================
+async function showPrintOrders() {
+  document.getElementById('header-meta').innerHTML = 'Signed in <a id="logout-link">Sign out</a>';
+  var ll = document.getElementById('logout-link'); if (ll) ll.addEventListener('click', doLogout);
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading print orders…</p></div>';
+  try {
+    var data = await api('/api/admin/print-jobs');
+    var jobs = data.jobs || [];
+    var html =
+      '<div class="toolbar">' +
+        '<h1>Print Orders</h1>' +
+        '<div class="summary"><button class="btn" id="back-to-customers">← Back to customers</button></div>' +
+      '</div>' +
+      '<p style="color:#6b5f48;font-size:14px;margin:0 0 18px;max-width:700px;line-height:1.6;">Every automatic hardcover order placed with Lulu shows here. While an order still says <strong>submitted</strong> and Lulu has not started printing, you can <strong>Cancel</strong> it — that is your safety window. Once Lulu begins printing, it can no longer be canceled from here. Press <strong>Refresh</strong> to pull the latest status (and tracking) from Lulu.</p>';
+    if (jobs.length === 0) {
+      html += '<div class="empty">No print orders yet. When a hardcover customer approves their book, the order appears here.</div>';
+    } else {
+      html += '<table><thead><tr>' +
+        '<th>Customer</th><th>Order status</th><th>Lulu status</th><th>Cost</th><th>Placed</th><th>Actions</th>' +
+        '</tr></thead><tbody>';
+      jobs.forEach(function(j){
+        var cancelable = (j.status === 'submitted' && j.lulu_print_job_id);
+        var costStr = (j.total_cost != null) ? ('$' + Number(j.total_cost).toFixed(2) + (j.currency && j.currency !== 'USD' ? ' ' + escapeHtml(j.currency) : '')) : '—';
+        var actions = '';
+        if (cancelable) actions += '<button class="btn btn-danger-sm" onclick="cancelPrintOrder(\'' + j.id + '\')">Cancel order</button> ';
+        if (j.lulu_print_job_id) actions += '<button class="btn" onclick="refreshPrintOrder(\'' + j.id + '\')">Refresh</button> ';
+        if (j.tracking_url) actions += '<a class="btn" href="' + escapeHtml(j.tracking_url) + '" target="_blank">Track</a>';
+        if (!actions) actions = '<span class="muted">—</span>';
+        html += '<tr>' +
+          '<td><strong>' + escapeHtml(j.customer_name || '(deleted customer)') + '</strong><br><span class="muted" style="font-size:12px;">' + escapeHtml(j.customer_email || '') + '</span></td>' +
+          '<td><span class="status-pill status-' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span>' + (j.lulu_env === 'sandbox' ? ' <span class="muted" style="font-size:11px;">(test)</span>' : '') + (j.status === 'validated' ? '<br><span class="muted" style="font-size:11px;">price check only — no order</span>' : '') + '</td>' +
+          '<td class="muted">' + escapeHtml(j.last_lulu_status || '—') + '</td>' +
+          '<td>' + costStr + '</td>' +
+          '<td class="muted">' + fmtDate(j.created_at) + '</td>' +
+          '<td>' + actions + (j.error ? '<div style="color:#c0392b;font-size:12px;margin-top:4px;max-width:260px;">' + escapeHtml(j.error) + '</div>' : '') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    document.getElementById('main').innerHTML = html;
+    var back = document.getElementById('back-to-customers'); if (back) back.addEventListener('click', showDashboard);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function cancelPrintOrder(id) {
+  if (!confirm('Cancel this hardcover order at Lulu?\n\nThis stops it from printing and shipping, and cannot be undone. Only do this if something looks wrong.')) return;
+  try {
+    var res = await api('/api/admin/print-job/' + id + '/cancel', { method: 'POST' });
+    alert(res.message || 'Order canceled.');
+    showPrintOrders();
+  } catch (e) {
+    alert('Could not cancel this order: ' + e.message);
+  }
+}
+
+async function refreshPrintOrder(id) {
+  try {
+    await api('/api/admin/print-job/' + id + '/refresh', { method: 'POST' });
+    showPrintOrders();
+  } catch (e) {
+    alert('Could not refresh from Lulu: ' + e.message);
   }
 }
 
@@ -586,8 +661,9 @@ async function showDraft(draftId, customerId) {
 // Boot
 // ============================================================================
 (function(){
+  var wantsPrintOrders = (location.hash === '#print-orders');
   if (getSession()) {
-    showDashboard();
+    if (wantsPrintOrders) showPrintOrders(); else showDashboard();
   } else {
     showLogin();
   }
