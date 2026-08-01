@@ -298,20 +298,23 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     if (lulu.enabled) {
       (async () => {
         try {
+          // CRITICAL: auth (keys) + cost (validates the SKU + returns the real price).
           await lulu.getToken();
-          const dims = await lulu.calculateCoverDimensions({ pageCount: 34, unit: 'in' });
-          let costLine = '';
+          const cost = await lulu.calculateCost({
+            pageCount: 34, quantity: 1, shippingLevel: 'MAIL',
+            address: { name: 'Test', address1: '123 Main St', city: 'Little Rock', state: 'AR', zip: '72201', country: 'US', phone: '5015550100' },
+          });
+          const total = cost && cost.total_cost_incl_tax;
+          if (!(Number(total) > 0)) throw new Error('cost check returned no usable total');
+          // BONUS (best-effort): cover dimensions. The cover generator already uses
+          // the exact geometry verified from Ken's real proof, so this is optional.
+          let coverNote = '';
           try {
-            const cost = await lulu.calculateCost({
-              pageCount: 34, quantity: 1, shippingLevel: 'MAIL',
-              address: { name: 'Test', address1: '123 Main St', city: 'Little Rock', state: 'AR', zip: '72201', country: 'US', phone: '5015550100' },
-            });
-            const t = cost && cost.total_cost_incl_tax;
-            if (t) costLine = ', 34pg cost ~' + t + ' ' + ((cost && cost.currency) || 'USD');
-          } catch (ce) { costLine = ', cost-check note: ' + ce.message.slice(0, 120); }
+            const dims = await lulu.calculateCoverDimensions({ pageCount: 34, unit: 'in' });
+            if (dims && dims.width) coverNote = '; 34pg cover ' + dims.width + 'x' + dims.height + ' ' + (dims.unit || 'in');
+          } catch (cd) { coverNote = '; cover-dims check skipped (' + cd.message.slice(0, 60) + ')'; }
           console.log('[lulu] ✅ SELF-TEST PASSED (' + lulu.env + '): keys authenticate; SKU '
-            + lulu.DEFAULT_POD_PACKAGE_ID + ' valid; 34pg cover '
-            + (dims && dims.width) + ' x ' + (dims && dims.height) + ' ' + ((dims && dims.unit) || 'in') + costLine);
+            + lulu.DEFAULT_POD_PACKAGE_ID + ' valid; 34pg cost ~' + total + ' ' + ((cost && cost.currency) || 'USD') + coverNote);
         } catch (e) {
           console.error('[lulu] ❌ SELF-TEST FAILED (' + lulu.env + '): ' + e.message
             + '  → check the keys and/or pod_package_id.');
