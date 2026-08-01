@@ -53,8 +53,12 @@ const upload = multer({
 function makeRateLimiter({ windowMs, max, message }) {
   const hits = new Map(); // ip -> [timestamps]
   return (req, res, next) => {
-    const ip = ((req.headers['x-forwarded-for'] || '').split(',')[0].trim()) ||
-               req.socket.remoteAddress || 'unknown';
+    // Use the RIGHTMOST X-Forwarded-For entry — the hop Render's proxy appended,
+    // which is the real client IP. The LEFTMOST is client-controlled, so keying
+    // on it let an attacker send a random header per request and dodge the cap.
+    const xff = String(req.headers['x-forwarded-for'] || '')
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    const ip = (xff.length ? xff[xff.length - 1] : (req.socket.remoteAddress || 'unknown'));
     const now = Date.now();
     const recent = (hits.get(ip) || []).filter((t) => now - t < windowMs);
     if (recent.length >= max) {

@@ -19,6 +19,34 @@ router.use(express.json());
 const SESSION_TTL_DAYS = 7;
 
 // ---------------------------------------------------------------------------
+// Login throttle — a stranger who finds the login page must not be able to
+// guess the admin password at machine speed. Single instance, so an in-memory
+// Map is enough. Keyed on the REAL client IP (rightmost X-Forwarded-For entry,
+// the hop Render appended — the leftmost is client-spoofable).
+// ---------------------------------------------------------------------------
+const _loginHits = new Map(); // ip -> [timestamps]
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const LOGIN_MAX = 8;                     // attempts per window per IP
+function clientIp(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  return xff.length ? xff[xff.length - 1] : (req.socket.remoteAddress || 'unknown');
+}
+function loginLimiter(req, res, next) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const recent = (_loginHits.get(ip) || []).filter((t) => now - t < LOGIN_WINDOW_MS);
+  if (recent.length >= LOGIN_MAX) {
+    return res.status(429).json({ error: 'Too many sign-in attempts. Please wait a few minutes, then try again.' });
+  }
+  recent.push(now);
+  _loginHits.set(ip, recent);
+  // Best-effort tidy so the Map doesn't grow forever.
+  if (_loginHits.size > 5000) { for (const k of _loginHits.keys()) { _loginHits.delete(k); break; } }
+  next();
+}
+
+// ---------------------------------------------------------------------------
 // Auth middleware — every admin endpoint except /login goes through this
 // ---------------------------------------------------------------------------
 async function requireAdmin(req, res, next) {
@@ -38,7 +66,7 @@ async function requireAdmin(req, res, next) {
 // Body: { password: "..." }
 // Returns: { ok, sessionToken, expiresAt }
 // ---------------------------------------------------------------------------
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const password = req.body.password || '';
     const expected = process.env.ADMIN_PASSWORD;

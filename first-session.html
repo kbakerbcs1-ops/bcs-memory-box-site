@@ -104,11 +104,12 @@
 
   var idx = 0, saved = {}, clip = null;
   var mediaRecorder=null, stream=null, chunks=[], recording=false, uploading=false, seconds=0, timerInt=null;
+  var unsavedBlob=null; // a recording that hasn't been saved to the server yet
   var body = document.getElementById('body');
 
   function storyUrl(mode){ return 'yourstory.html?token=' + encodeURIComponent(TOKEN||'') + '&warmup=' + (mode||'done'); }
   document.getElementById('skipAll').onclick = function(){ goStory('skip'); };
-  function goStory(mode){ stopClip(); window.location.href = storyUrl(mode); }
+  function goStory(mode){ stopClip(); unsavedBlob=null; window.location.href = storyUrl(mode); }
 
   function stopClip(){ if(clip){ try{clip.pause();}catch(e){} clip=null; } }
   function playClip(name){ stopClip(); try{ clip=new Audio('first-session-audio/'+name+'.mp3'); clip.play().catch(function(){}); }catch(e){} }
@@ -126,7 +127,7 @@
   function fmt(s){ var m=Math.floor(s/60), x=s%60; return m+':'+(x<10?'0':'')+x; }
 
   function render(){
-    stopClip(); recording=false;
+    stopClip(); recording=false; unsavedBlob=null; // leaving a step abandons any unsaved take
     var s = STEPS[idx];
     if(s.type==='welcome'){
       body.innerHTML =
@@ -229,35 +230,75 @@
     recBtn.className='recbtn rec'; hint.textContent='● Recording… tap when you’re finished';
   }
 
+  // Save a recording to the server. Hardened like the main recorder: each try
+  // has a 30s timeout (so a sleeping server can never hang it forever), it
+  // auto-retries up to 3 times, and it KEEPS the recording in memory the whole
+  // time — so a failure never loses the person's very first answer; they get a
+  // real "Try saving again" button for the same recording.
   async function uploadAnswer(blob){
     var s=STEPS[idx];
     var status=document.getElementById('status');
     var recArea=document.getElementById('recordArea');
-    uploading=true; window.__bcsRecording=false;
+    uploading=true; window.__bcsRecording=false; unsavedBlob=blob;
     if(recArea) recArea.style.display='none';
-    status.textContent='Saving your answer… (the first one can take a moment)';
     var mime=blob.type||'audio/webm';
     var ext = mime.indexOf('mp4')!==-1 ? 'm4a' : (mime.indexOf('ogg')!==-1 ? 'ogg' : 'webm');
     var fname = (s.title||('Warm-up '+Date.now())) + '.' + ext;
-    var fd=new FormData(); fd.append('audio', blob, fname);
-    try{
-      var resp=await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(TOKEN), { method:'POST', body:fd });
-      var data=await resp.json();
-      if(!resp.ok || !data.ok){ throw new Error(data.error || ('Save failed (status '+resp.status+')')); }
-      uploading=false;
-      saved[idx]=URL.createObjectURL(blob);
-      status.textContent='';
-      showSaved(saved[idx]);
-    }catch(err){
-      uploading=false;
-      if(recArea) recArea.style.display='';
-      var recBtn=document.getElementById('recBtn'); if(recBtn){ recBtn.className='recbtn'; }
-      var hint=document.getElementById('hint'); if(hint){ hint.textContent='Press the button and just talk'; }
-      status.innerHTML='<strong style="color:#c0392b;">That didn’t save — please try again, or press Skip.</strong>';
+
+    var MAX_TRIES=3, TIMEOUT_MS=30000;
+    for(var attempt=1; attempt<=MAX_TRIES; attempt++){
+      if(status){ status.innerHTML = (attempt===1)
+        ? 'Saving your answer… (the first one can take a moment)'
+        : 'Still saving… the server may be waking up. Your recording is safe. (try '+attempt+' of '+MAX_TRIES+')'; }
+      var fd=new FormData(); fd.append('audio', blob, fname);
+      var controller = (typeof AbortController!=='undefined') ? new AbortController() : null;
+      var timer = controller ? setTimeout(function(){ try{controller.abort();}catch(e){} }, TIMEOUT_MS) : null;
+      try{
+        var opts={ method:'POST', body:fd }; if(controller) opts.signal=controller.signal;
+        var resp=await fetch(API_BASE + '/api/customer/upload?token=' + encodeURIComponent(TOKEN), opts);
+        if(timer) clearTimeout(timer);
+        var data=await resp.json();
+        if(!resp.ok || !data.ok){ throw new Error(data.error || ('Save failed (status '+resp.status+')')); }
+        // Success — recording is safely on the server.
+        uploading=false; unsavedBlob=null;
+        saved[idx]=URL.createObjectURL(blob);
+        if(status) status.textContent='';
+        showSaved(saved[idx]);
+        return;
+      }catch(err){
+        if(timer) clearTimeout(timer);
+        if(attempt < MAX_TRIES){
+          await new Promise(function(r){ setTimeout(r, 1500*attempt); }); // brief backoff, then retry
+          continue;
+        }
+        // All tries failed — keep the recording and offer a real retry.
+        uploading=false;
+        showUploadFailed(blob);
+        return;
+      }
     }
   }
 
-  window.addEventListener('beforeunload', function(e){ if(recording || uploading){ e.preventDefault(); e.returnValue=''; return ''; } });
+  // All save attempts failed. The recording is still safe in memory — give a
+  // clear "Try saving again" button (retries the SAME recording, no re-record),
+  // plus Skip. This screen only appears after 3 automatic tries.
+  function showUploadFailed(blob){
+    var status=document.getElementById('status');
+    var recArea=document.getElementById('recordArea');
+    if(recArea) recArea.style.display='none';
+    if(!status) return;
+    status.innerHTML =
+      '<div style="color:#c0392b;font-weight:700;margin-bottom:10px;">That didn’t save yet — but your recording is safe right here.</div>'+
+      '<button class="primary" id="retrySaveBtn">Try saving again</button>'+
+      '<div style="font-size:15px;color:#6f6357;margin-top:12px;line-height:1.5;">This is usually just the internet or the server waking up. Press the button above to try again. '+
+      'If it still won’t save, you can press <strong>Skip</strong> to move on — you can always record this later on your story page.</div>';
+    var rb=document.getElementById('retrySaveBtn');
+    if(rb) rb.onclick=function(){ uploadAnswer(blob); };
+  }
+
+  // Warn before leaving if a recording is in progress, uploading, OR recorded
+  // but not yet saved — so a first answer is never lost by closing the tab.
+  window.addEventListener('beforeunload', function(e){ if(recording || uploading || unsavedBlob){ e.preventDefault(); e.returnValue=''; return ''; } });
 
   render();
 })();
