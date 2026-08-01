@@ -21,8 +21,9 @@
 // ============================================================================
 
 const ENV = (process.env.LULU_ENV || 'sandbox').toLowerCase();
-const CLIENT_KEY = process.env.LULU_CLIENT_KEY || '';
-const CLIENT_SECRET = process.env.LULU_CLIENT_SECRET || '';
+// .trim() defends against a stray space or newline getting pasted with the key.
+const CLIENT_KEY = (process.env.LULU_CLIENT_KEY || '').trim();
+const CLIENT_SECRET = (process.env.LULU_CLIENT_SECRET || '').trim();
 
 const BASE = ENV === 'production'
   ? 'https://api.lulu.com'
@@ -58,15 +59,24 @@ async function getToken() {
   const now = Date.now();
   if (_token && _token.expires_at > now + 30000) return _token.access_token;
 
+  // Try HTTP Basic auth first (Lulu's documented method). If that's rejected,
+  // fall back to sending the credentials in the body (client_secret_post) — this
+  // covers either Keycloak client-auth configuration without guesswork.
   const basic = Buffer.from(CLIENT_KEY + ':' + CLIENT_SECRET).toString('base64');
-  const resp = await fetch(TOKEN_URL, {
+  let resp = await fetch(TOKEN_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': 'Basic ' + basic,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { 'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=client_credentials',
   });
+  if (!resp.ok && (resp.status === 400 || resp.status === 401)) {
+    resp = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=client_credentials'
+        + '&client_id=' + encodeURIComponent(CLIENT_KEY)
+        + '&client_secret=' + encodeURIComponent(CLIENT_SECRET),
+    });
+  }
   if (!resp.ok) throw new Error('Lulu auth failed (' + resp.status + '): ' + await resp.text());
   const data = await resp.json();
   const ttl = (data.expires_in || 3600) * 1000;
