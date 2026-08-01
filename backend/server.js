@@ -18,7 +18,8 @@ const voiceRoutes    = require('./routes/voice');
 const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
-const { checkStuckCustomers } = require('./lib/cleanup');
+const { checkStuckCustomers, recoverStuckOnBoot } = require('./lib/cleanup');
+const mailer = require('./lib/mailer');
 
 // ----------------------------------------------------------------------------
 // PROCESS CRASH GUARDS. This service runs hands-free with nobody watching, so a
@@ -305,6 +306,11 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     console.error('[startup] migration error:', err.message);
     console.error('[startup] starting server anyway — trial endpoint will still work without DB');
   }
+
+  // Recover work orphaned by this restart: any voice-revision left mid-apply is
+  // reset so the customer can retry (and Ken is told). Never blocks startup.
+  await recoverStuckOnBoot().catch((e) => console.error('[startup] boot recovery failed:', e.message));
+
   app.listen(PORT, () => {
     console.log('BCS Memory Box portal server listening on port ' + PORT);
     console.log('  db: ' + (db.enabled ? 'connected' : 'NOT CONFIGURED (DATABASE_URL missing)'));
@@ -337,6 +343,21 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
         } catch (e) {
           console.error('[lulu] ❌ SELF-TEST FAILED (' + lulu.env + '): ' + e.message
             + '  → check the keys and/or pod_package_id.');
+          // Hands-free means Ken can't be expected to watch the logs — email him
+          // if automatic printing can't reach Lulu, so a broken connection is
+          // never silent. Best-effort; a mail failure just logs.
+          try {
+            await mailer.sendEmail(mailer.ADMIN_EMAIL,
+              'Memory Box: Lulu print connection FAILED its self-test',
+              '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+              '<h2 style="color:#c0392b;">Automatic printing may be down</h2>' +
+              '<p>On startup, the Lulu print connection failed its self-test:</p>' +
+              '<p><strong>' + mailer.escapeHtml(e.message) + '</strong></p>' +
+              '<p>New hardcover orders may not go through until this is fixed — it usually means the Lulu keys or the book SKU need attention. Nothing was charged. Existing books and the rest of the site are unaffected.</p>' +
+              '</div>');
+          } catch (mailErr) {
+            console.error('[lulu] could not email Ken about self-test failure: ' + mailErr.message);
+          }
         }
       })();
     } else {

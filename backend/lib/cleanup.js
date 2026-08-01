@@ -236,8 +236,16 @@ async function runCleanupPipeline(customerId) {
           await db.query('INSERT INTO follow_up_questions (customer_id, question, sort_order) VALUES ($1, $2, $3)', [customerId, questions[i], i]);
         }
         await db.query("UPDATE customers SET status = 'follow_up' WHERE id = $1", [customerId]);
-        try { await emailCustomerFollowUp(customer); }
-        catch (e) { console.error('[cleanup] could not email customer follow-up: ' + e.message); }
+        try {
+          await emailCustomerFollowUp(customer);
+        } catch (e) {
+          // The customer never got their "answer a few questions" invite, so they
+          // won't come back on their own — a silent strand. Tell Ken so he can
+          // reach out or finalize the draft as-is from the dashboard.
+          console.error('[cleanup] could not email customer follow-up: ' + e.message);
+          try { await emailAdminFollowUpUndelivered(customer, e.message); }
+          catch (e2) { console.error('[cleanup] also could not alert Ken about it: ' + e2.message); }
+        }
         console.log('[cleanup] First draft done; generated ' + questions.length + ' follow-up question(s), awaiting answers.');
         return draft.id; // stop here — draft saved but not delivered until they answer or skip
       }
@@ -246,7 +254,14 @@ async function runCleanupPipeline(customerId) {
 
     // 8. FINALIZE: draft is ready for Ken.
     await db.query("UPDATE customers SET status = 'draft_ready', follow_up_done = TRUE WHERE id = $1", [customerId]);
-    await emailAdminDraftReady(customer, draft.id);
+    // Notify Ken — but a mail hiccup must NEVER roll a finished draft back to
+    // 'error'. The draft is built and saved; if the email fails we log it and
+    // leave the customer in 'draft_ready' (Ken still sees it in the dashboard).
+    try {
+      await emailAdminDraftReady(customer, draft.id);
+    } catch (e) {
+      console.error('[cleanup] draft is READY but the notify email failed (draft stands): ' + e.message);
+    }
 
     console.log('[cleanup] Pipeline complete for ' + customer.name + ' — draft ' + draft.id);
     return draft.id;
@@ -576,6 +591,38 @@ async function emailAdminError(customer, errorMessage) {
   return sendEmail('kbakerbcs1@gmail.com', subject, html);
 }
 
+// A customer's first draft is ready, but we couldn't email them the "answer a
+// few questions" follow-up invite — so they won't return on their own. Tell Ken
+// so nobody is silently stranded in the follow-up state.
+async function emailAdminFollowUpUndelivered(customer, reason) {
+  const subject = 'Memory Box: couldn’t reach ' + (customer && customer.name || 'a customer') + ' for follow-up';
+  const adminLink = 'https://www.bcsmemorybox.com/admin.html';
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#c0392b;">A follow-up email didn’t send</h2>' +
+'<p><strong>' + escapeHtml((customer && customer.name) || 'A customer') + '</strong> (' + escapeHtml((customer && customer.email) || '') + ') has a finished first draft, but the email inviting them to answer a few follow-up questions <strong>failed to send</strong>, so they won’t know to come back.</p>' +
+'<p style="color:#7a726a;font-size:13px;">Reason: ' + escapeHtml(reason || 'unknown') + '</p>' +
+'<p>You can reach out to them directly, or open their record and finalize/deliver the draft as-is.</p>' +
+'<p><a href="' + adminLink + '" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+'</div>';
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
+// After a restart we reset any interrupted voice-revisions; let Ken know which
+// customers were affected (they've been unblocked to try their change again).
+async function emailAdminInterruptedRevisions(names) {
+  const subject = 'Memory Box: recovered ' + names.length + ' interrupted change' + (names.length === 1 ? '' : 's') + ' after a restart';
+  const list = names.map(function (n) { return '<li>' + escapeHtml(n) + '</li>'; }).join('');
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">A restart interrupted some changes — now recovered</h2>' +
+'<p>The server restarted while ' + names.length + ' customer voice-change' + (names.length === 1 ? ' was' : 's were') + ' being applied. I’ve reset ' + (names.length === 1 ? 'it' : 'them') + ' so the customer can simply try the change again — nothing was lost:</p>' +
+'<ul>' + list + '</ul>' +
+'<p style="color:#7a726a;font-size:13px;">No action needed unless a customer says a change didn’t take — then ask them to say it once more.</p>' +
+'</div>';
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
 async function sendEmail(to, subject, html) {
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -652,6 +699,43 @@ async function checkStuckCustomers() {
       console.error('[reaper] could not email Ken about stuck customer:', e.message);
       _alertedStuck.delete(c.id); // allow a retry on the next tick
     }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Boot recovery. When the process restarts (deploy or crash), any voice-revision
+// left in revision_status='working' is orphaned — the async job applying it is
+// gone and will never finish, and the customer's "make a change" button stays
+// blocked. On boot we reset those to 'error' with a friendly message (which
+// unblocks the customer to try again) and, if any were found, tell Ken. This is
+// the one stuck state the time-based reaper can't see (drafts have no
+// updated_at), so we sweep it once at startup instead.
+// ----------------------------------------------------------------------------
+async function recoverStuckOnBoot() {
+  if (!db.enabled) return;
+  let rows = [];
+  try {
+    const result = await db.query(
+      "UPDATE drafts SET revision_status = 'error', revision_error = $1 " +
+      "WHERE revision_status = 'working' RETURNING id, customer_id",
+      ['Your change didn’t finish because our server restarted. Please say your change again — nothing was lost.']
+    );
+    rows = result.rows || [];
+  } catch (err) {
+    console.error('[boot-recovery] could not sweep interrupted revisions: ' + err.message);
+    return;
+  }
+  if (rows.length === 0) return;
+  console.warn('[boot-recovery] reset ' + rows.length + ' interrupted revision(s): working -> error');
+  try {
+    const names = [];
+    for (const r of rows) {
+      const c = await db.queryOne('SELECT name, email FROM customers WHERE id = $1', [r.customer_id]);
+      names.push(((c && c.name) || 'a customer') + (c && c.email ? ' (' + c.email + ')' : ''));
+    }
+    await emailAdminInterruptedRevisions(names);
+  } catch (e) {
+    console.error('[boot-recovery] could not email Ken about interrupted revisions: ' + e.message);
   }
 }
 
@@ -876,6 +960,7 @@ module.exports = {
   generateFollowUpQuestions,
   emailAdminDraftReady,
   checkStuckCustomers,
+  recoverStuckOnBoot,
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data
