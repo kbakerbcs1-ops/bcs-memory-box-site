@@ -150,7 +150,7 @@ async function calculateCost({ podPackageId, pageCount, quantity, address, shipp
       quantity: quantity || 1,
     }],
     shipping_address: toLuluAddress(address),
-    shipping_option_level: shippingLevel || 'MAIL',
+    shipping_level: shippingLevel || 'MAIL',
   };
   return apiFetch('/print-job-cost-calculations/', 'POST', body);
 }
