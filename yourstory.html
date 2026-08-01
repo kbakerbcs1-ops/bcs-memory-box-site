@@ -399,18 +399,6 @@ function renderRecordingsPlayback(recordings) {
   return html;
 }
 
-// A card that lets a customer go back into recording mode to add more (or fix a
-// too-short recording). Uses the existing reopen-recording endpoint, which the
-// backend already accepts from the draft-ready and delivered states.
-function addMoreCard() {
-  return '<div class="card">' +
-    '<h2>Want to add more to your story?</h2>' +
-    '<p>If a recording came out too short, or you remembered something new, you can add more anytime \u2014 we\'ll fold it in and update your draft.</p>' +
-    '<button class="btn btn-secondary" onclick="reopenStory(this)">Add more to your story</button>' +
-    '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
-  '</div>';
-}
-
 function renderDraftReady(data) {
   var customer = data.customer;
   var photos = data.photos || [];
@@ -432,6 +420,7 @@ function renderDraftReady(data) {
     renderChangeBanner(memoir) +
     renderMemoirReader(memoir, photos) +
     renderDecisionCard(memoir, customer) +
+    renderAddMoreCard() +
     renderMoreOptions(recordings, dl, customer);
 }
 
@@ -483,19 +472,29 @@ function renderShippingForm(customer) {
     '</div>';
 }
 
+// A clear, visible way to add a PHOTO or a NEW RECORDING before approving.
+// Kept prominent (not hidden in the collapsed panel) because customers kept
+// finishing their first recordings and not finding any way to add more. Both
+// live on the recording screen, so this just reopens that screen for them.
+function renderAddMoreCard() {
+  return '<div class="card" style="background:#f7f3ea;border:1px solid #e8dfc9;text-align:center;">' +
+      '<h2 style="margin-bottom:6px;">Want to add a photo or another memory?</h2>' +
+      '<p style="max-width:540px;margin:0 auto 16px;">Anytime before you approve, you can add a <strong>photograph</strong> or record a <strong>whole new story</strong> you remembered. I\u2019ll fold it right into your book &mdash; nothing you\u2019ve already recorded is lost. (For a small wording fix instead, use \u201CTell me a change\u201D above.)</p>' +
+      '<button class="btn btn-large" onclick="reopenStory(this)">\uD83D\uDCF7 Add a photo or a new recording</button>' +
+      '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+    '</div>';
+}
+
 // Everything secondary, tucked into one collapsed panel so it never competes
-// with the main decision: a Word copy, listening back, adding a new story, and
-// hardcover details. Named so a customer knows what's inside without opening it.
+// with the main decision: a Word copy, listening back, and hardcover details.
+// (Adding a photo / new recording now has its own visible card above.)
 function renderMoreOptions(recordings, dl, customer) {
   var bookCard = (customer.plan === 'story') ? orderBookCard() : includedBookCard(customer.plan);
   return '<details class="card" style="background:#fbf9f4;">' +
-      '<summary style="cursor:pointer;font-family:Georgia,serif;font-size:18px;color:#8b5a2b;font-weight:bold;">More options &mdash; a copy to keep, your recordings, add another story</summary>' +
+      '<summary style="cursor:pointer;font-family:Georgia,serif;font-size:18px;color:#8b5a2b;font-weight:bold;">More options &mdash; a copy to keep, your recordings</summary>' +
       '<div style="margin-top:16px;">' +
         '<p style="margin:0 0 6px;"><a class="btn btn-secondary" href="' + dl + '" style="text-decoration:none;">Download a Word copy</a></p>' +
         '<p class="muted" style="margin:0 0 20px;font-size:14px;">To save, print, or share it from your computer.</p>' +
-        '<p style="margin:0 0 6px;"><button class="btn btn-secondary" onclick="reopenStory(this)">Record another story</button></p>' +
-        '<p class="muted" style="margin:0 0 6px;font-size:14px;">Remembered a whole new memory? Add it and we\u2019ll fold it in. (For a small fix, use \u201CTell me a change\u201D above instead.)</p>' +
-        '<p id="reopen-status" class="muted" style="margin:0 0 8px;font-size:14px;"></p>' +
         renderRecordingsPlayback(recordings) +
         bookCard +
       '</div>' +
@@ -788,8 +787,8 @@ function renderDelivered(data) {
   var token = getToken();
   var dl = API_BASE + '/api/customer/download?token=' + encodeURIComponent(token);
   var photoLine = (photoCount > 0)
-    ? 'Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' included in your memoir, placed alongside the stories they belong to. Would you like a printed hardcover copy, or to add more to your story? Just reach out to Ken.'
-    : 'If you would like to add photographs or order a hardcover book later, just reach out to Ken.';
+    ? 'Your ' + photoCount + ' photograph' + (photoCount === 1 ? ' is' : 's are') + ' included in your memoir, placed alongside the stories they belong to.'
+    : '';
   return renderStatusBar(customer.status) +
     '<div class="card">' +
       '<div class="eyebrow">Complete</div>' +
@@ -800,10 +799,10 @@ function renderDelivered(data) {
     '</div>' +
     renderMemoirReader(memoir, photos) +
     renderRecordingsPlayback(recordings) +
-    '<div class="card">' +
+    '<div class="card" style="background:#f7f3ea;border:1px solid #e8dfc9;">' +
       '<h2>Want to add more to your story?</h2>' +
-      '<p>Remembered something new? You can keep adding recordings anytime &mdash; Ken will fold them into an updated memoir for you.</p>' +
-      '<button class="btn btn-secondary" onclick="reopenStory(this)">Add more to your story</button>' +
+      '<p>Remembered something new, or have a photograph to include? You can add a <strong>photo</strong> or record a <strong>whole new story</strong> anytime &mdash; Ken will fold it into an updated memoir for you.</p>' +
+      '<button class="btn btn-large" onclick="reopenStory(this)">📷 Add a photo or a new recording</button>' +
       '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
     '</div>' +
     (customer.plan === 'story' ? orderBookCard() : includedBookCard(customer.plan));
@@ -1431,7 +1430,7 @@ async function reopenStory(btn) {
     setTimeout(function(){ window.location.reload(); }, 900);
   } catch (err) {
     if (statusEl) { statusEl.textContent = err.message || 'Something went wrong.'; statusEl.style.color = '#c0392b'; }
-    if (btn) { btn.disabled = false; btn.textContent = 'Add more to your story'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📷 Add a photo or a new recording'; }
   }
 }
 
