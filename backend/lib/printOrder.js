@@ -82,18 +82,28 @@ async function autoOrderOnApproval(customer, draft) {
 
   const externalId = 'book-' + customer.id + '-' + draft.id;
 
-  // Idempotency — never order the same draft twice.
-  const existing = await db.queryOne(
-    'SELECT id, status FROM print_jobs WHERE external_id = $1', [externalId]
-  );
-  if (existing) return { ordered: false, reason: 'already_ordered' };
-
   const assets = await loadPrintAssets(draft.id);
   if (!assets) return { ordered: false, reason: 'no_print_pdf' };
 
   const address = await loadShippingAddress(customer.id);
   if (!address) return { ordered: false, reason: 'no_address' };
   if (address.email == null) address.email = customer.email;
+
+  // Idempotency — atomically CLAIM this externalId before any charge. external_id
+  // is UNIQUE, so only ONE caller can win this INSERT; a concurrent or repeated
+  // approval gets no row back and stops here. This closes the race where two
+  // clicks both pass a plain existence check before either inserts, and is what
+  // makes a double order / double charge impossible. (Claimed AFTER the no-PDF /
+  // no-address checks so those remain retryable — they never create a row.)
+  const claim = await db.queryOne(
+    `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status)
+       VALUES ($1, $2, $3, $4, 'reserving')
+     ON CONFLICT (external_id) DO NOTHING
+     RETURNING id`,
+    [customer.id, draft.id, externalId, lulu.env]
+  );
+  if (!claim) return { ordered: false, reason: 'already_ordered' };
+  const jobRowId = claim.id;
 
   const interiorUrl = PUBLIC_BACKEND_URL + '/api/print/' + externalId + '/interior.pdf';
   const coverUrl = PUBLIC_BACKEND_URL + '/api/print/' + externalId + '/cover.pdf';
@@ -112,11 +122,10 @@ async function autoOrderOnApproval(customer, draft) {
     if (!(total > 0)) throw new Error('Lulu returned no usable cost');
     if (total > COST_CEILING) {
       await db.query(
-        `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status,
-           pod_package_id, quantity, total_cost, currency, error)
-         VALUES ($1,$2,$3,$4,'error',$5,1,$6,$7,$8)`,
-        [customer.id, draft.id, externalId, lulu.env, lulu.DEFAULT_POD_PACKAGE_ID,
-         total, currency, 'cost above ceiling ($' + total + ' > $' + COST_CEILING + ')']
+        `UPDATE print_jobs SET status='error', pod_package_id=$2, quantity=1,
+           total_cost=$3, currency=$4, error=$5, updated_at=NOW() WHERE id=$1`,
+        [jobRowId, lulu.DEFAULT_POD_PACKAGE_ID, total, currency,
+         'cost above ceiling ($' + total + ' > $' + COST_CEILING + ')']
       );
       return { ordered: false, reason: 'cost_anomaly', total, currency };
     }
@@ -144,20 +153,18 @@ async function autoOrderOnApproval(customer, draft) {
     // Record it as 'validated' so Ken can see the confirmed cost, then stop.
     if (!LIVE_ORDERS) {
       await db.query(
-        `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status,
-           pod_package_id, quantity, total_cost, currency)
-         VALUES ($1,$2,$3,$4,'validated',$5,1,$6,$7)`,
-        [customer.id, draft.id, externalId, lulu.env, lulu.DEFAULT_POD_PACKAGE_ID, total, currency]
+        `UPDATE print_jobs SET status='validated', pod_package_id=$2, quantity=1,
+           total_cost=$3, currency=$4, updated_at=NOW() WHERE id=$1`,
+        [jobRowId, lulu.DEFAULT_POD_PACKAGE_ID, total, currency]
       );
       return { ordered: false, reason: 'dry_run', total, currency, env: lulu.env };
     }
 
     // Record intent BEFORE submitting (so a crash mid-call can't lose track).
     await db.query(
-      `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status,
-         pod_package_id, quantity, total_cost, currency)
-       VALUES ($1,$2,$3,$4,'created',$5,1,$6,$7)`,
-      [customer.id, draft.id, externalId, lulu.env, lulu.DEFAULT_POD_PACKAGE_ID, total, currency]
+      `UPDATE print_jobs SET status='created', pod_package_id=$2, quantity=1,
+         total_cost=$3, currency=$4, updated_at=NOW() WHERE id=$1`,
+      [jobRowId, lulu.DEFAULT_POD_PACKAGE_ID, total, currency]
     );
 
     // --- Create the order (24h production delay = the auto-cancel safety window) ---
@@ -179,20 +186,24 @@ async function autoOrderOnApproval(customer, draft) {
     await db.query(
       `UPDATE print_jobs
          SET status = 'submitted', lulu_print_job_id = $2, last_lulu_status = $3, updated_at = NOW()
-       WHERE external_id = $1`,
-      [externalId, luluId, luluStatus]
+       WHERE id = $1`,
+      [jobRowId, luluId, luluStatus]
     );
     await db.query('UPDATE customers SET print_ordered_at = NOW() WHERE id = $1', [customer.id]);
 
     return { ordered: true, luluId, total, currency, status: luluStatus, env: lulu.env };
   } catch (err) {
-    // Record the failure and let the caller fall back to emailing Ken.
+    // Record the failure — but NEVER clobber a row that already reached Lulu
+    // (status 'submitted' / has a Lulu job id). An error AFTER a successful
+    // charge (e.g. a lost/timed-out response) must not look like a plain
+    // failure, or a manual re-order would double-charge the customer. We only
+    // mark 'error' when the order definitely did not go through.
     try {
       await db.query(
-        `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status, error)
-         VALUES ($1,$2,$3,$4,'error',$5)
-         ON CONFLICT (external_id) DO UPDATE SET status='error', error=EXCLUDED.error, updated_at=NOW()`,
-        [customer.id, draft.id, externalId, lulu.env, String(err.message).slice(0, 500)]
+        `UPDATE print_jobs
+            SET status = 'error', error = $2, updated_at = NOW()
+          WHERE id = $1 AND lulu_print_job_id IS NULL AND status <> 'submitted'`,
+        [jobRowId, String(err.message).slice(0, 500)]
       );
     } catch (_) { /* best effort */ }
     return { ordered: false, reason: 'error', error: err.message };

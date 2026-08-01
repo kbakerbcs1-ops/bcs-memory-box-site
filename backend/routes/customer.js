@@ -554,6 +554,14 @@ router.post('/approve-book', async (req, res) => {
       return res.status(400).json({ error: 'Please wait for your current change to finish, then approve.' });
     }
 
+    // Idempotency guard: if this book is already approved, don't run the whole
+    // approve + auto-order + notify flow again. Protects against a double-click
+    // or a retry landing here a second time (belt-and-suspenders with the
+    // atomic order-claim in printOrder — either one alone prevents a double order).
+    if (customer.status === 'approved') {
+      return res.json({ ok: true, alreadyApproved: true, message: 'Your book is already approved — you’re all set.' });
+    }
+
     // Save the shipping address for the included hardcover, if one was provided
     // with the approval (collected in the approval step for hardcover/legacy plans).
     const ship = (req.body && req.body.shipping) || null;
@@ -770,7 +778,7 @@ function autoOrderNote(order) {
     case 'no_address':     return 'No shipping address is on file yet, so I couldn’t auto-order it.';
     case 'already_ordered':return 'A hardcover order for this book already exists.';
     case 'cost_anomaly':   return 'Lulu’s price came back unexpectedly high ($' + (order.total || '?') + '), so I held off — please review before printing.';
-    case 'error':          return 'The automatic order hit an error (' + (order.error || 'unknown') + '), so please place this one manually.';
+    case 'error':          return 'The automatic order hit a snag (' + (order.error || 'unknown') + '). IMPORTANT: it may or may not have reached Lulu. Before placing anything by hand, open Print Orders (press Refresh) or check your Lulu account first, so you don’t order it twice.';
     default:               return 'Placed for manual printing.';
   }
 }

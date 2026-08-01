@@ -63,6 +63,24 @@ const DEFAULT_POD_PACKAGE_ID = process.env.LULU_POD_PACKAGE_ID
 // ----------------------------------------------------------------------------
 let _token = null;        // { access_token, expires_at (ms) }
 
+// All Lulu HTTP calls go through this so a hung/slow connection can never block
+// a request — or the customer's approval flow — forever. Aborts after `ms`
+// (default 30s) and reports a clear timeout error instead of hanging.
+async function luluFetch(url, opts, ms = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, Object.assign({}, opts, { signal: controller.signal }));
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      throw new Error('Lulu request timed out after ' + Math.round(ms / 1000) + 's');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function getToken() {
   if (!enabled) throw new Error('Lulu not configured (missing client key/secret).');
   const now = Date.now();
@@ -71,14 +89,14 @@ async function getToken() {
   // Try HTTP Basic auth first (Lulu's documented method). If that's rejected,
   // fall back to sending the credentials in the body (client_secret_post) — this
   // covers either Keycloak client-auth configuration without guesswork.
-  let resp = await fetch(TOKEN_URL, {
+  let resp = await luluFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Authorization': authHeader(), 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=client_credentials',
   });
   // Fallback only makes sense when we have the raw key+secret (not a pre-made Basic string).
   if (!resp.ok && (resp.status === 400 || resp.status === 401) && CLIENT_KEY && CLIENT_SECRET && !BASIC_AUTH) {
-    resp = await fetch(TOKEN_URL, {
+    resp = await luluFetch(TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'grant_type=client_credentials'
@@ -95,7 +113,7 @@ async function getToken() {
 
 async function apiFetch(path, method, body) {
   const token = await getToken();
-  const resp = await fetch(BASE + path, {
+  const resp = await luluFetch(BASE + path, {
     method,
     headers: {
       'Authorization': 'Bearer ' + token,

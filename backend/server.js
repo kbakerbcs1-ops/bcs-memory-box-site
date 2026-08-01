@@ -20,6 +20,25 @@ const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers } = require('./lib/cleanup');
 
+// ----------------------------------------------------------------------------
+// PROCESS CRASH GUARDS. This service runs hands-free with nobody watching, so a
+// stray rejected promise or thrown error in a background job must not silently
+// take it down. We log both so Render's logs show what happened.
+//   - unhandledRejection: log and keep running (a background job's promise
+//     rejected without a .catch — the rest of the service is still healthy).
+//   - uncaughtException: log, then exit so Render restarts us cleanly rather
+//     than continuing in an unknown, half-broken state.
+// ----------------------------------------------------------------------------
+process.on('unhandledRejection', (reason) => {
+  console.error('[process] UNHANDLED REJECTION (kept running):',
+    (reason && reason.stack) || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[process] UNCAUGHT EXCEPTION (restarting):', (err && err.stack) || err);
+  // Give the log a beat to flush, then exit so the platform restarts us fresh.
+  setTimeout(() => process.exit(1), 250);
+});
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),

@@ -27,6 +27,17 @@ const pool = connectionString
     })
   : null;
 
+// CRASH GUARD: pg emits an 'error' event on idle clients when the DB connection
+// drops (Render Postgres maintenance/restart, a network blip). With no listener,
+// Node turns that into an uncaught exception and the whole service crashes. We
+// log it and let the pool recover on the next query — a routine reconnect must
+// never take the hands-free service down.
+if (pool) {
+  pool.on('error', (err) => {
+    console.error('[db] idle client error (pool will recover):', err.message);
+  });
+}
+
 // Query helper — returns { rows, rowCount }. Throws on error.
 async function query(text, params) {
   if (!pool) throw new Error('Database not configured (DATABASE_URL missing).');
