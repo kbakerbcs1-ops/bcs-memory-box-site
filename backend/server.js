@@ -16,6 +16,7 @@ const adminRoutes    = require('./routes/admin');
 const finishRoutes   = require('./routes/finish');
 const voiceRoutes    = require('./routes/voice');
 const printRoutes    = require('./routes/print');
+const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers } = require('./lib/cleanup');
 
@@ -289,6 +290,36 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     console.log('BCS Memory Box portal server listening on port ' + PORT);
     console.log('  db: ' + (db.enabled ? 'connected' : 'NOT CONFIGURED (DATABASE_URL missing)'));
     console.log('  stripe: ' + (process.env.STRIPE_SECRET_KEY ? 'configured' : 'NOT CONFIGURED'));
+
+    // Lulu connection self-test — proves the API keys authenticate AND the book
+    // SKU is valid, by hitting the (free, no-charge) auth + cover-dimensions +
+    // cost endpoints on boot. Result is logged so it can be verified without any
+    // customer flow. Never places an order.
+    if (lulu.enabled) {
+      (async () => {
+        try {
+          await lulu.getToken();
+          const dims = await lulu.calculateCoverDimensions({ pageCount: 34, unit: 'in' });
+          let costLine = '';
+          try {
+            const cost = await lulu.calculateCost({
+              pageCount: 34, quantity: 1, shippingLevel: 'MAIL',
+              address: { name: 'Test', address1: '123 Main St', city: 'Little Rock', state: 'AR', zip: '72201', country: 'US', phone: '5015550100' },
+            });
+            const t = cost && cost.total_cost_incl_tax;
+            if (t) costLine = ', 34pg cost ~' + t + ' ' + ((cost && cost.currency) || 'USD');
+          } catch (ce) { costLine = ', cost-check note: ' + ce.message.slice(0, 120); }
+          console.log('[lulu] ✅ SELF-TEST PASSED (' + lulu.env + '): keys authenticate; SKU '
+            + lulu.DEFAULT_POD_PACKAGE_ID + ' valid; 34pg cover '
+            + (dims && dims.width) + ' x ' + (dims && dims.height) + ' ' + ((dims && dims.unit) || 'in') + costLine);
+        } catch (e) {
+          console.error('[lulu] ❌ SELF-TEST FAILED (' + lulu.env + '): ' + e.message
+            + '  → check the keys and/or pod_package_id.');
+        }
+      })();
+    } else {
+      console.log('  lulu: NOT CONFIGURED (auto-print OFF)');
+    }
 
     // Safety net: shortly after boot (catches anything stranded by this restart)
     // and every 10 minutes, flag any customer stuck in 'processing' and email Ken.
