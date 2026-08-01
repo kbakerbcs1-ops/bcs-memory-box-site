@@ -30,6 +30,11 @@ const HARDCOVER_PLANS = new Set(['hardcover', 'legacy']);
 // anomaly, DO NOT auto-charge, and fall back to Ken. Tune as real data comes in.
 const COST_CEILING = Number(process.env.LULU_COST_CEILING || 75);
 
+// SAFETY: real orders only happen when LULU_LIVE_ORDERS=true. Default (unset)
+// is TEST MODE — we validate the price + cover dimensions against Lulu but place
+// NO order and spend nothing. Flip to 'true' when ready to print for real.
+const LIVE_ORDERS = process.env.LULU_LIVE_ORDERS === 'true';
+
 const PUBLIC_BACKEND_URL =
   process.env.PUBLIC_BACKEND_URL || 'https://bcs-memory-box-site.onrender.com';
 
@@ -132,6 +137,19 @@ async function autoOrderOnApproval(customer, draft) {
       }
     } catch (e) {
       console.error('[autoOrder] cover-dimension refine skipped (using generated cover): ' + e.message);
+    }
+
+    // TEST MODE (default): everything above validated against Lulu for real
+    // (auth, price, cover dimensions), but we place NO order and spend NOTHING.
+    // Record it as 'validated' so Ken can see the confirmed cost, then stop.
+    if (!LIVE_ORDERS) {
+      await db.query(
+        `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status,
+           pod_package_id, quantity, total_cost, currency)
+         VALUES ($1,$2,$3,$4,'validated',$5,1,$6,$7)`,
+        [customer.id, draft.id, externalId, lulu.env, lulu.DEFAULT_POD_PACKAGE_ID, total, currency]
+      );
+      return { ordered: false, reason: 'dry_run', total, currency, env: lulu.env };
     }
 
     // Record intent BEFORE submitting (so a crash mid-call can't lose track).

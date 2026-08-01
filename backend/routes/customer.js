@@ -762,6 +762,7 @@ function escapeHtml(s) {
 // happen, shown to Ken in the fallback "ready to print" email.
 function autoOrderNote(order) {
   switch (order && order.reason) {
+    case 'dry_run':        return 'TEST MODE: I checked Lulu for real — this book would cost $' + (order.total || '?') + ' ' + (order.currency || 'USD') + ' and the cover size checks out. No order was placed and nothing was charged. Flip LULU_LIVE_ORDERS=true in Render when you’re ready to print for real.';
     case 'lulu_disabled':  return 'Automatic printing isn’t switched on yet (Lulu keys not set) — place this one on Lulu as usual.';
     case 'digital_plan':   return 'This customer is on the digital plan, so there’s no hardcover to print.';
     case 'no_print_pdf':   return 'The print-ready PDF isn’t generated for this book yet, so I couldn’t auto-order it.';
