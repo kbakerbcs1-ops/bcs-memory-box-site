@@ -1530,12 +1530,9 @@ function bindRevisionHandler() {
 // For customers whose plan already includes the hardcover book(s), show an
 // "included" note instead of the paid order card (so they are never charged twice).
 function includedBookCard(plan) {
-  var many = (plan === 'legacy');
   return '<div class="card">' +
-    '<h2>Your hardcover ' + (many ? 'books are' : 'book is') + ' included</h2>' +
-    '<p>' + (many
-        ? 'Three hardcover copies come with your Family Legacy plan'
-        : 'A hardcover copy comes with your Hardcover Memoir plan') +
+    '<h2>Your hardcover book is included</h2>' +
+    '<p>A hardcover copy comes with your Hardcover Memoir plan' +
       ' \u2014 there\'s nothing more to pay. Ken will arrange the printing and shipping and confirm the delivery details with you.</p>' +
   '</div>';
 }

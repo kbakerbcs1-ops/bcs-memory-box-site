@@ -23,36 +23,33 @@ const PRODUCT_DESC =
   'as a professionally printed hardcover book (one copy included) — with two ' +
   'rounds of revisions, and photographs included free.';
 
-// Plans. 'hardcover' is the ONLY sellable plan.
-// 'story' and 'legacy' are RETIRED: kept here ONLY so a few legacy/test customer
-// records that still carry those values resolve without error. New signups can
-// never be assigned them (see ALLOWED_PLANS / DEFAULT_PLAN), and a retired-plan
-// customer who somehow reaches checkout is charged as Hardcover, not the old price.
+// Plans. 'hardcover' is the ONLY plan — we sell one product, the $299 Hardcover
+// Memoir. The old 'story' ($175) and 'legacy' ($499) tiers were fully retired on
+// Aug 2, 2026 (all legacy test records migrated to hardcover first, then the
+// definitions removed). sellablePlanKey() still maps any unexpected/blank stored
+// value to hardcover, so nothing can ever fall through to a wrong price.
 const PLANS = {
   hardcover: {
     cents: HARDCOVER_PRICE_CENTS,
     name: PRODUCT_NAME + ' — BCS Memory Box',
     desc: PRODUCT_DESC,
   },
-  // ---- retired (never offered to new customers) ----
-  story:  { cents: 17500, name: 'Digital Keepsake — BCS Memory Box', desc: 'Retired plan (digital only).', retired: true },
-  legacy: { cents: 49900, name: 'Family Legacy — BCS Memory Box',   desc: 'Retired plan.',                retired: true },
 };
 
 const DEFAULT_PLAN = 'hardcover';          // what an unset/invalid plan becomes
 const ALLOWED_PLANS = ['hardcover'];       // what a NEW signup is allowed to choose
-const HARDCOVER_PLANS = new Set(['hardcover', 'legacy']); // plans that include a printed book
+const HARDCOVER_PLANS = new Set(['hardcover']); // plans that include a printed book
 
 // Price tokens that must NEVER reappear in customer-facing copy or email
 // templates. The content-guard (scripts/check-content.js) fails the check if it
 // finds any of these, so a retired price can't silently creep back in.
 const RETIRED_PRICE_TOKENS = ['$125', '$175', '$499', '$49'];
 
-// Resolve a stored plan value to a *sellable* plan key for checkout:
-// unknown or retired -> the default ($299 Hardcover).
+// Resolve a stored plan value to a valid plan key for checkout:
+// anything unknown/blank -> the default ($299 Hardcover). Since 'hardcover' is
+// the only plan, this effectively guarantees the $299 price for everyone.
 function sellablePlanKey(storedPlan) {
-  const p = PLANS[storedPlan];
-  return (p && !p.retired) ? storedPlan : DEFAULT_PLAN;
+  return PLANS[storedPlan] ? storedPlan : DEFAULT_PLAN;
 }
 
 module.exports = {
