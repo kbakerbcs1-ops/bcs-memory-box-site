@@ -264,7 +264,7 @@ async function sendSampleEmail(toEmail, name, cleanedText) {
 paragraphs +
 '</div>' +
 '<p>That is what a 90-second clip becomes. Imagine your whole story — family, childhood, the moments that shaped you — preserved this way.</p>' +
-'<p>If you would like to go further, the full Memory Box service is <strong>$125</strong>. We capture your life story in four sections, deliver a polished memoir document, and there are optional add-ons for photographs and a printed hardcover book.</p>' +
+'<p>If you would like to go further, the full Hardcover Memoir is <strong>$299</strong>. We capture your life story in your own voice, organize it into chapters, and deliver it as a professionally printed hardcover book — with two rounds of revisions, and photographs included free.</p>' +
 '<p style="margin-top:32px;">' +
 '<a href="https://www.bcsmemorybox.com" style="background:#8b5a2b;color:#fff;padding:14px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Georgia,serif;">See the full service</a>' +
 '</p>' +
