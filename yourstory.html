@@ -211,15 +211,36 @@ function renderStatusBar(status) {
 
 function renderAwaitingPayment(customer) {
   return renderStatusBar(customer.status) +
-    '<div class="card">' +
+    '<div class="card" style="text-align:center;">' +
       '<div class="eyebrow">One step left</div>' +
-      '<h1>Your account is ready, ' + escapeHtml(customer.name) + '.</h1>' +
-      '<div class="alert alert-warning">' +
-        'Your account exists but payment for Your Story ($125) hasn\'t been completed yet. ' +
-        'Once Stripe checkout is wired up, you\'ll be able to complete payment right from here.' +
-      '</div>' +
-      '<p class="muted">Account: ' + escapeHtml(customer.email) + ' · Created ' + formatDate(customer.createdAt) + '</p>' +
+      '<h1>Welcome back, ' + escapeHtml(customer.name) + '.</h1>' +
+      '<p style="font-size:18px;line-height:1.6;max-width:520px;margin:0 auto 20px;">Your account is ready — the only thing left is to complete your payment. Then you can start recording your story right away.</p>' +
+      '<button class="btn btn-large" onclick="resumeCheckout(this)" style="background:#2a6b3a;">Complete your payment &rarr;</button>' +
+      '<p id="finish-payment-status" class="muted" style="min-height:1.2em;font-size:14px;margin-top:12px;"></p>' +
+      '<p class="muted" style="margin-top:10px;">Account: ' + escapeHtml(customer.email) + ' · Created ' + formatDate(customer.createdAt) + '</p>' +
     '</div>';
+}
+
+// Re-open Stripe checkout for someone who created an account but hasn't paid yet
+// (e.g. they left checkout and came back via their link). Same flow signup uses.
+async function resumeCheckout(btn) {
+  var token = getToken();
+  if (!token) return;
+  var statusEl = document.getElementById('finish-payment-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Taking you to secure checkout…'; }
+  if (statusEl) { statusEl.textContent = 'One moment — opening secure checkout. This can take a few seconds.'; statusEl.style.color = '#5a4a3a'; }
+  try {
+    var resp = await fetch(API_BASE + '/api/customer/create-checkout-session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token })
+    });
+    var data = await resp.json().catch(function(){ return {}; });
+    if (data && data.alreadyPaid && data.portalUrl) { window.location.href = data.portalUrl; return; }
+    if (!resp.ok || !data.ok || !data.checkoutUrl) throw new Error(data.error || 'Could not open checkout. Please try again.');
+    window.location.href = data.checkoutUrl;
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = (err.message || 'Something went wrong') + ' — or email us at kbakerbcs1@gmail.com for help.'; statusEl.style.color = '#c0392b'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Complete your payment →'; }
+  }
 }
 
 function renderRecordingPage(data) {
