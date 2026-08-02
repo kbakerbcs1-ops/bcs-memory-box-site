@@ -474,6 +474,17 @@
     <a class="rb-btn" href="#" onclick="openTrial();return false;"><span class="dot">&#9679;</span>Record 90 seconds — free</a>
 </div>
 
+<!-- message-first hero styles -->
+<style>
+  .hero h1{font-size:clamp(30px,4.2vw,52px);max-width:660px;margin-left:auto;margin-right:auto;}
+  .hero .subtitle{max-width:640px;margin-left:auto;margin-right:auto;}
+  .hero .lead{max-width:660px;}
+  .hero-eyebrow{font-family:'Open Sans',-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.28em;font-size:14px;color:var(--beige);margin-bottom:18px;text-shadow:0 1px 4px rgba(0,0,0,.6);}
+  .hero-paths{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:12px;max-width:100%;}
+  .hero-chip{display:inline-flex;align-items:center;gap:9px;padding:12px 22px;border:1px solid rgba(235,219,188,0.55);border-radius:999px;color:#fff;font-size:16px;background:rgba(0,0,0,0.28);text-decoration:none;transition:background .2s,border-color .2s;text-align:center;}
+  .hero-chip:hover{background:rgba(235,219,188,0.16);border-color:var(--beige);}
+  .hero-chip span{font-size:19px;}
+</style>
 <!-- HERO -->
 <header class="hero">
     <div class="hero-side">
@@ -484,10 +495,15 @@
             <div class="vsub">A quick 90-second tour</div>
         </a>
     </div>
-    <h1>BCS Memory Box</h1>
-    <p class="subtitle">Preserving the stories that matter most</p>
-    <p class="lead">A simple way to record your life story — in your own voice, for the people you love. Record at your own pace, on the phone, tablet, or computer you already own. No technology to learn.</p>
-    <div class="scroll-cue">scroll to learn more ↓</div>
+    <div class="hero-eyebrow">BCS Memory Box</div>
+    <h1>Their stories won&rsquo;t be here forever.</h1>
+    <p class="subtitle">Help someone you love save their life story &mdash; in their own voice.</p>
+    <p class="lead">We turn a lifetime of memories into a beautiful hardcover book &mdash; recorded simply, at their own pace, on a phone or computer they already own. Give it to a parent or grandparent, or record your own. No technology to learn.</p>
+    <div class="hero-paths">
+        <a href="/signup.html" class="hero-chip"><span>&#127873;</span> Giving it to someone you love</a>
+        <a href="#try-free" class="hero-chip">Recording your own story</a>
+    </div>
+    <div class="scroll-cue">scroll to learn more &darr;</div>
     <p class="hero-return" style="margin-top:20px;font-size:15px;"><a href="#return-widget" style="color:var(--beige);text-decoration:underline;text-underline-offset:3px;">Already recording your story? Get your link &rarr;</a></p>
 </header>
 
