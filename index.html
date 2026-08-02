@@ -5,6 +5,14 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
+    <!-- Google Analytics (GA4) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-X4QSEQNERK"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-X4QSEQNERK');
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BCS Memory Box — Preserve Your Life Stories</title>
     <link rel="icon" href="/bcs-logo.png">
@@ -907,6 +915,7 @@
         throw new Error(data.error || 'Request failed');
       }
       show(5);
+      if(typeof gtag === 'function'){ gtag('event', 'trial_submitted', { event_category: 'conversion' }); }
     }catch(err){
       console.error('Trial send error:', err);
       $('trial-error-msg').textContent = 'Something went wrong: ' + (err.message || 'Unknown error') + '. Please try again, or email Ken directly at kbakerbcs1@gmail.com.';

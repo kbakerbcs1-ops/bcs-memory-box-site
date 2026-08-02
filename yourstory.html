@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Google Analytics (GA4) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X4QSEQNERK"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X4QSEQNERK');
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Story — BCS Memory Box</title>
 
@@ -107,6 +115,27 @@ function getToken() {
   var params = new URLSearchParams(window.location.search);
   return params.get('token');
 }
+
+// Fire the GA4 "purchase" conversion once when Stripe redirects back with checkout=success.
+// Strip the checkout param afterward so a page refresh can't double-count it.
+(function trackPurchaseOnce() {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      if (typeof gtag === 'function') {
+        gtag('event', 'purchase', {
+          currency: 'USD',
+          value: 299,
+          items: [{ item_name: 'Hardcover Memoir', price: 299, quantity: 1 }]
+        });
+      }
+      params.delete('checkout');
+      var qs = params.toString();
+      var newUrl = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  } catch (e) { /* analytics must never break the page */ }
+})();
 
 function escapeHtml(s) {
   var div = document.createElement('div');

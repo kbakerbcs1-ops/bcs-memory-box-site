@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Google Analytics (GA4) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X4QSEQNERK"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X4QSEQNERK');
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Get Started — BCS Memory Box</title>
     <link rel="icon" href="/bcs-logo.png">
@@ -150,6 +158,7 @@
       }
 
       // Otherwise, create a Stripe Checkout Session and redirect to it.
+      if(typeof gtag === 'function'){ gtag('event', 'sign_up', { event_category: 'conversion', plan: plan }); }
       btn.textContent = 'Taking you to secure checkout…';
       var coResp = await fetch(API_BASE + '/api/customer/create-checkout-session', {
         method: 'POST',
