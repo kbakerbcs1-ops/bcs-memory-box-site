@@ -95,10 +95,19 @@ async function autoOrderOnApproval(customer, draft) {
   // clicks both pass a plain existence check before either inserts, and is what
   // makes a double order / double charge impossible. (Claimed AFTER the no-PDF /
   // no-address checks so those remain retryable — they never create a row.)
+  //
+  // A row in a terminal, non-ordered state ('canceled' / 'error' / 'validated')
+  // is re-claimable — so if a customer undoes their approval (which cancels the
+  // order) and then re-approves, a fresh order can be placed. An ACTIVE row
+  // ('reserving' / 'created' / 'submitted') still blocks, so a live order can
+  // never be duplicated.
   const claim = await db.queryOne(
     `INSERT INTO print_jobs (customer_id, draft_id, external_id, lulu_env, status)
        VALUES ($1, $2, $3, $4, 'reserving')
-     ON CONFLICT (external_id) DO NOTHING
+     ON CONFLICT (external_id) DO UPDATE
+       SET status = 'reserving', error = NULL, lulu_print_job_id = NULL,
+           total_cost = NULL, last_lulu_status = NULL, updated_at = NOW()
+       WHERE print_jobs.status IN ('canceled', 'error', 'validated')
      RETURNING id`,
     [customer.id, draft.id, externalId, lulu.env]
   );

@@ -7,6 +7,7 @@ const db = require('../lib/db');
 const mailer = require('../lib/mailer');
 const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync } = require('../lib/cleanup');
 const printOrder = require('../lib/printOrder');
+const lulu = require('../lib/lulu');
 
 const router = express.Router();
 router.use(express.json());
@@ -102,7 +103,7 @@ router.get('/me', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Missing access token' });
 
     const customer = await db.queryOne(
-      `SELECT id, email, name, status, paid_at, created_at, plan,
+      `SELECT id, email, name, status, paid_at, created_at, plan, approved_at,
               ship_name, ship_address1, ship_address2, ship_city, ship_state, ship_zip, ship_country, ship_phone
        FROM customers
        WHERE access_token = $1`,
@@ -167,6 +168,11 @@ router.get('/me', async (req, res) => {
         plan: customer.plan || 'story',
         // Does this plan include a shipped hardcover? (drives the address form)
         includesHardcover: customer.plan === 'hardcover' || customer.plan === 'legacy',
+        approvedAt: customer.approved_at || null,
+        // Is the "changed your mind?" undo still open? (approved within ~24h —
+        // the window in which the Lulu order can still be stopped).
+        canUndoApproval: customer.status === 'approved' && !!customer.approved_at &&
+          (Date.now() - new Date(customer.approved_at).getTime()) < 24 * 60 * 60 * 1000,
         shipping: {
           name: customer.ship_name || '',
           address1: customer.ship_address1 || '',
@@ -840,6 +846,56 @@ router.post('/skip-follow-ups', async (req, res) => {
 
 module.exports = router;
 
+
+// ----------------------------------------------------------------------------
+// POST /api/customer/undo-approval?token=<access_token>
+// A customer-safe "changed your mind?" within ~24h of approving. Cancels the
+// auto-placed Lulu order (if it hasn't entered production yet) and returns the
+// customer to the reviewing state so they can edit and re-approve. If Lulu has
+// already started printing, we do NOT revert and point them to email Ken.
+// (Registered after module.exports, same as the routes below — the router is
+// exported by reference, so these are still part of it.)
+// ----------------------------------------------------------------------------
+router.post('/undo-approval', async (req, res) => {
+  try {
+    const token = req.query.token || req.body.token;
+    if (!token) return res.status(401).json({ error: 'Missing access token' });
+    const customer = await db.queryOne(
+      'SELECT id, status FROM customers WHERE access_token = $1', [token]);
+    if (!customer) return res.status(404).json({ error: 'Account not found' });
+    if (customer.status !== 'approved') {
+      return res.json({ ok: true, reverted: false, message: 'Your book isn’t approved right now, so there’s nothing to undo.' });
+    }
+
+    // Cancel the most recent print order for this customer, if one is live.
+    const job = await db.queryOne(
+      "SELECT id, status, lulu_print_job_id FROM print_jobs WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [customer.id]
+    );
+    if (job && job.status === 'submitted' && job.lulu_print_job_id) {
+      try {
+        await lulu.cancelPrintJob(job.lulu_print_job_id);
+      } catch (e) {
+        console.error('[undo-approval] Lulu cancel refused for customer ' + customer.id + ': ' + e.message);
+        return res.status(409).json({
+          error: 'Your book may already be printing, so I couldn’t stop it automatically. Please email Ken right away (kbakerbcs1@gmail.com) and he’ll sort it out for you.'
+        });
+      }
+      await db.query("UPDATE print_jobs SET status='canceled', last_lulu_status='CANCELED', updated_at=NOW() WHERE id=$1", [job.id]);
+    } else if (job && (job.status === 'reserving' || job.status === 'created' || job.status === 'validated')) {
+      await db.query("UPDATE print_jobs SET status='canceled', updated_at=NOW() WHERE id=$1", [job.id]);
+    }
+
+    // Return the customer + draft to the reviewing state (edit / re-approve).
+    await db.query("UPDATE customers SET status='draft_ready', approved_at=NULL, print_ordered_at=NULL WHERE id=$1", [customer.id]);
+    await db.query("UPDATE drafts SET status='delivered', approved_at=NULL WHERE customer_id=$1 AND status='approved'", [customer.id]);
+
+    return res.json({ ok: true, reverted: true, message: 'Done — your book is open for changes again.' });
+  } catch (err) {
+    console.error('[customer/undo-approval] error:', err);
+    res.status(500).json({ error: 'Something went wrong on our end. Please try again, or email Ken.' });
+  }
+});
 
 // ----------------------------------------------------------------------------
 // POST /api/customer/reopen-recording?token=<access_token>

@@ -580,8 +580,39 @@ function renderApproved(data) {
       '<p>Thank you, ' + escapeHtml(first) + '. You’ve approved your memoir as final — it’s on its way to becoming your hardcover book. You can still read it any time right here.</p>' +
       '<p style="margin-top:14px;"><a class="btn" href="' + dl + '" style="text-decoration:none;">Download a copy (.docx)</a></p>' +
     '</div>' +
+    (customer.canUndoApproval ? renderUndoApprovalCard() : '') +
     renderMemoirReader(memoir, photos) +
     renderRecordingsPlayback(recordings);
+}
+
+// Shown briefly after approval (while the order can still be stopped): a gentle
+// "changed your mind?" that cancels the print order and reopens editing. Uses
+// the customer-safe /undo-approval endpoint.
+function renderUndoApprovalCard() {
+  return '<div class="card" style="background:#fbf7ef;border:1px solid #e8dfc9;text-align:center;">' +
+      '<h2 style="margin-bottom:6px;">Changed your mind?</h2>' +
+      '<p style="max-width:520px;margin:0 auto 14px;">You just approved this, so there’s still a short window to stop it. If you tapped by accident or thought of a change, you can undo it and go back to editing — your book won’t be printed.</p>' +
+      '<button class="btn btn-large" style="background:#8b5a2b;" onclick="undoApproval(this)">Undo — I’m not ready yet</button>' +
+      '<p id="undo-approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+    '</div>';
+}
+
+async function undoApproval(btn) {
+  var token = getToken();
+  if (!token) return;
+  if (!confirm('Undo your approval and go back to editing? Your book won’t be printed.')) return;
+  var statusEl = document.getElementById('undo-approve-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'One moment…'; }
+  try {
+    var resp = await fetch(API_BASE + '/api/customer/undo-approval?token=' + encodeURIComponent(token), { method: 'POST' });
+    var data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Could not undo.');
+    if (statusEl) { statusEl.textContent = data.message || 'Opening your story for changes…'; statusEl.style.color = '#2a5a2a'; }
+    setTimeout(function () { window.location.reload(); }, 1000);
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = err.message || 'Something went wrong.'; statusEl.style.color = '#c0392b'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Undo — I’m not ready yet'; }
+  }
 }
 
 // Poll while a voice change is being applied; reload when it's ready.
@@ -696,13 +727,49 @@ function bindReviseHandlers() {
       reqHeaders['Content-Type'] = 'application/json';
     }
 
-    if (!confirm('Approve your book as final? You’re saying it reads just the way you want.')) return;
-    approveBtn.disabled = true; approveBtn.textContent = 'Approving…'; if (s) s.textContent = '';
-    try {
-      var resp = await fetch(API_BASE + '/api/customer/approve-book?token=' + encodeURIComponent(token), { method: 'POST', headers: reqHeaders, body: reqBody });
-      var d = await resp.json(); if (!resp.ok || !d.ok) throw new Error(d.error || 'Failed');
-      window.location.reload();
-    } catch (err) { if (s) { s.textContent = err.message || 'Something went wrong'; s.style.color = '#c0392b'; } approveBtn.disabled = false; approveBtn.textContent = '✓ Yes — this is my book'; }
+    // A clear, in-page confirmation instead of a soft browser popup — this is
+    // the point of no return (a real book prints), so make it unmistakable and
+    // easy to back out of.
+    var isHardcover = !!shipForm;
+    approveBtn.style.display = 'none';
+    if (s) {
+      s.style.color = '#2a2520';
+      s.innerHTML =
+        '<div style="background:#fff;border:2px solid #2a6b3a;border-radius:10px;padding:18px 20px;max-width:520px;margin:12px auto 0;text-align:center;">' +
+          '<div style="font-size:19px;font-weight:bold;margin-bottom:8px;">Ready to make this your book?</div>' +
+          '<div style="font-size:16px;line-height:1.55;color:#4a4038;margin-bottom:16px;">' +
+            (isHardcover
+              ? 'When you approve, your <strong>hardcover book will be printed and mailed to you</strong>, and you won’t be able to make more changes.'
+              : 'When you approve, this becomes your <strong>final book</strong> and you won’t be able to make more changes.') +
+          '</div>' +
+          '<button class="btn btn-large" id="approve-yes" style="background:#2a6b3a;">' + (isHardcover ? 'Yes — print my book' : 'Yes — make it final') + '</button>' +
+          ' <button class="btn btn-secondary" id="approve-notyet">Not yet</button>' +
+        '</div>';
+      var notYet = document.getElementById('approve-notyet');
+      if (notYet) notYet.addEventListener('click', function () {
+        s.innerHTML = ''; approveBtn.style.display = ''; approveBtn.disabled = false;
+      });
+      var yes = document.getElementById('approve-yes');
+      if (yes) yes.addEventListener('click', doApprove);
+    } else {
+      doApprove();
+    }
+    return;
+
+    async function doApprove() {
+      var yesBtn = document.getElementById('approve-yes');
+      var noBtn = document.getElementById('approve-notyet');
+      if (yesBtn) { yesBtn.disabled = true; yesBtn.textContent = 'Making your book…'; }
+      if (noBtn) noBtn.style.display = 'none';
+      try {
+        var resp = await fetch(API_BASE + '/api/customer/approve-book?token=' + encodeURIComponent(token), { method: 'POST', headers: reqHeaders, body: reqBody });
+        var d = await resp.json(); if (!resp.ok || !d.ok) throw new Error(d.error || 'Failed');
+        window.location.reload();
+      } catch (err) {
+        if (s) { s.innerHTML = '<span style="color:#c0392b;">' + (err.message || 'Something went wrong') + '</span>'; }
+        approveBtn.style.display = ''; approveBtn.disabled = false; approveBtn.textContent = '✓ Yes — this is my book';
+      }
+    }
   });
 }
 
