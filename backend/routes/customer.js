@@ -8,6 +8,7 @@ const mailer = require('../lib/mailer');
 const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync } = require('../lib/cleanup');
 const printOrder = require('../lib/printOrder');
 const lulu = require('../lib/lulu');
+const pricing = require('../lib/pricing');
 
 const router = express.Router();
 router.use(express.json());
@@ -36,10 +37,11 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Please enter a valid email address.' });
     }
 
-    // Which plan/tier they chose (story=$175, hardcover=$299, legacy=$499). Default story.
-    const ALLOWED_PLANS = ['story', 'hardcover', 'legacy'];
-    let plan = (req.body.plan || 'story').toString().toLowerCase();
-    if (!ALLOWED_PLANS.includes(plan)) plan = 'story';
+    // The only product we sell is the $299 Hardcover Memoir. Any unset/unknown
+    // plan defaults to hardcover — never one of the retired lower/higher tiers.
+    // (See lib/pricing.js for the single source of truth.)
+    let plan = (req.body.plan || pricing.DEFAULT_PLAN).toString().toLowerCase();
+    if (!pricing.ALLOWED_PLANS.includes(plan)) plan = pricing.DEFAULT_PLAN;
 
     // If a customer already exists for this email and hasn't paid yet, reuse the
     // existing access_token (so they can retry checkout instead of getting blocked).
@@ -165,9 +167,9 @@ router.get('/me', async (req, res) => {
         status: customer.status,
         paidAt: customer.paid_at,
         createdAt: customer.created_at,
-        plan: customer.plan || 'story',
+        plan: customer.plan || pricing.DEFAULT_PLAN,
         // Does this plan include a shipped hardcover? (drives the address form)
-        includesHardcover: customer.plan === 'hardcover' || customer.plan === 'legacy',
+        includesHardcover: pricing.HARDCOVER_PLANS.has(customer.plan),
         approvedAt: customer.approved_at || null,
         // Is the "changed your mind?" undo still open? (approved within ~24h —
         // the window in which the Lulu order can still be stopped).

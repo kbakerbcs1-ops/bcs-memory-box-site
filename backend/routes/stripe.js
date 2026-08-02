@@ -14,20 +14,16 @@ const express = require('express');
 const Stripe = require('stripe');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
+const pricing = require('../lib/pricing');
 
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const stripe = stripeKey ? new Stripe(stripeKey) : null;
 
 const FRONTEND_BASE = 'https://www.bcsmemorybox.com';
-const YOUR_STORY_PRICE_CENTS = 12500; // legacy constant (kept for reference)
 
-// Pricing tiers. The customer's chosen plan (stored at signup) sets the amount.
-const PLANS = {
-  story:     { cents: 17500, name: 'Digital Keepsake \u2014 BCS Memory Box', desc: 'Your life story as a finished, polished memoir document. Photos included free. Two rounds of revisions.' },
-  hardcover: { cents: 29900, name: 'Hardcover Memoir \u2014 BCS Memory Box', desc: 'Your finished memoir PLUS a professionally printed hardcover book (one copy included). Premium color photos. Two rounds of revisions.' },
-  legacy:    { cents: 49900, name: 'Family Legacy \u2014 BCS Memory Box', desc: 'Everything in Hardcover, plus three hardcover copies, your recorded voice preserved, a longer story, and a personal welcome from Ken.' },
-};
+// Pricing tiers live in the single source of truth (lib/pricing.js).
+const PLANS = pricing.PLANS;
 
 // ----------------------------------------------------------------------------
 // Router 1: checkout session creator (JSON-parsed body)
@@ -64,7 +60,8 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
       });
     }
 
-    const planKey = PLANS[customer.plan] ? customer.plan : 'story';
+    // Resolve to a sellable plan: unknown/retired -> $299 Hardcover (never the old price).
+    const planKey = pricing.sellablePlanKey(customer.plan);
     const planInfo = PLANS[planKey];
 
     const session = await stripe.checkout.sessions.create({

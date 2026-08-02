@@ -21,9 +21,10 @@ const db = require('./db');
 const lulu = require('./lulu');
 const coverPdf = require('./coverPdf');
 const storage = require('./storage');
+const pricing = require('./pricing');
 
-// Plans that include a physical hardcover book.
-const HARDCOVER_PLANS = new Set(['hardcover', 'legacy']);
+// Plans that include a physical hardcover book (single source of truth).
+const HARDCOVER_PLANS = pricing.HARDCOVER_PLANS;
 
 // Safety ceiling: a single ~34-page 8.5x11 premium-color hardcover plus US
 // shipping is roughly $30. If Lulu ever quotes far above this, treat it as an

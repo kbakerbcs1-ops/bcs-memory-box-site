@@ -20,6 +20,7 @@ const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers, recoverStuckOnBoot } = require('./lib/cleanup');
 const mailer = require('./lib/mailer');
+const pricing = require('./lib/pricing');
 
 // ----------------------------------------------------------------------------
 // PROCESS CRASH GUARDS. This service runs hands-free with nobody watching, so a
@@ -264,7 +265,7 @@ async function sendSampleEmail(toEmail, name, cleanedText) {
 paragraphs +
 '</div>' +
 '<p>That is what a 90-second clip becomes. Imagine your whole story — family, childhood, the moments that shaped you — preserved this way.</p>' +
-'<p>If you would like to go further, the full Hardcover Memoir is <strong>$299</strong>. We capture your life story in your own voice, organize it into chapters, and deliver it as a professionally printed hardcover book — with two rounds of revisions, and photographs included free.</p>' +
+'<p>If you would like to go further, the full ' + pricing.PRODUCT_NAME + ' is <strong>$' + pricing.HARDCOVER_PRICE_USD + '</strong>. ' + pricing.PRODUCT_DESC + '</p>' +
 '<p style="margin-top:32px;">' +
 '<a href="https://www.bcsmemorybox.com" style="background:#8b5a2b;color:#fff;padding:14px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Georgia,serif;">See the full service</a>' +
 '</p>' +
