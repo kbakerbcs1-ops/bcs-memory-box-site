@@ -615,7 +615,7 @@ function bindReviseHandlers() {
     recBtn.addEventListener('click', async function () {
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
         try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-        catch (e) { msgEl.textContent = 'Couldn’t reach your microphone. Please allow it in your browser, then try again.'; msgEl.style.color = '#c0392b'; return; }
+        catch (e) { msgEl.innerHTML = bcsMicHelpHtml(e, false); msgEl.style.color = '#c0392b'; return; }
         chunks = [];
         var types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'], mime = '';
         for (var i = 0; i < types.length; i++) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) { mime = types[i]; break; } }
@@ -1058,6 +1058,53 @@ function bindUploadHandler() {
 // customer preview it, then posts the blob to the SAME /api/customer/upload
 // endpoint the file picker uses (FormData field 'audio'), so it flows into the
 // existing transcription + cleanup pipeline unchanged.
+// Warm, specific microphone-recovery guidance. A blocked mic is a dead-end for
+// a senior otherwise: the browser won't re-prompt, and the fix (a tiny icon by
+// the address bar) is invisible. hasUpload=true adds the "upload a file instead"
+// pointer (only where that option exists on the page). Bullet is first-line
+// help; the email link is the escalation to Ken.
+function bcsMicHelpHtml(err, hasUpload) {
+  var name = (err && err.name) || '';
+  var mail = 'mailto:kbakerbcs1@gmail.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
+  var uploadBit = hasUpload ? ' (Or scroll down and <strong>upload an audio file instead</strong>.)' : '';
+  var emailBit = ' Still stuck? <a href="' + mail + '" style="color:#8b5a2b;">Email us and we’ll help you</a>.';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
+    return 'I couldn’t find a microphone. If you’re on a computer without one, please try your phone.' + uploadBit + emailBit;
+  }
+  if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
+    return 'It looks like the microphone is turned off for this page. To turn it on: find the little icon just to the left of the web address at the very top of your screen, tap it, and choose <strong>Allow</strong> — then press the button again.' + uploadBit + emailBit;
+  }
+  return 'I couldn’t reach the microphone. Please press the button and try once more.' + emailBit;
+}
+
+// Best-effort "did we actually hear you?" check. Catches the classic senior
+// trap — a muted or too-quiet mic recording saved as silence without them
+// realizing. Returns {quiet:true} only when it's near-silent or basically empty.
+// On ANY analysis failure it returns quiet:false, so a real recording is never
+// blocked (fail open).
+async function bcsCheckAudible(blob, seconds) {
+  try {
+    if (seconds != null && seconds < 1) return { quiet: true, reason: 'short' };
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return { quiet: false };
+    var buf = await blob.arrayBuffer();
+    var ctx = new Ctx();
+    var audio = await ctx.decodeAudioData(buf.slice(0));
+    var peak = 0;
+    for (var c = 0; c < audio.numberOfChannels; c++) {
+      var d = audio.getChannelData(c);
+      var step = Math.max(1, Math.floor(d.length / 40000)); // sample for speed
+      for (var i = 0; i < d.length; i += step) { var v = Math.abs(d[i]); if (v > peak) peak = v; }
+    }
+    try { ctx.close(); } catch (e) {}
+    if (audio.duration < 1) return { quiet: true, reason: 'short' };
+    if (peak < 0.02) return { quiet: true, reason: 'silent' }; // near-silence => mic likely off/too quiet
+    return { quiet: false };
+  } catch (e) {
+    return { quiet: false }; // analysis unsupported/failed — never block a real recording
+  }
+}
+
 function bindRecordHandler() {
   var recBtn = document.getElementById('record-btn');
   if (!recBtn) return; // not on the recording view
@@ -1113,10 +1160,12 @@ function bindRecordHandler() {
   recBtn.addEventListener('click', async function() {
     // START
     if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      statusEl.innerHTML = 'Your browser may ask to use the microphone — just tap <strong>Allow</strong>.';
+      statusEl.style.color = '#5a4a3a';
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (err) {
-        statusEl.textContent = 'Couldn\'t access your microphone. Please allow microphone permission in your browser, then try again.';
+        statusEl.innerHTML = bcsMicHelpHtml(err, true);
         statusEl.style.color = '#c0392b';
         return;
       }
@@ -1128,7 +1177,7 @@ function bindRecordHandler() {
         }
         mediaRecorder = __recMime ? new MediaRecorder(stream, { mimeType: __recMime }) : new MediaRecorder(stream);
       mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
-      mediaRecorder.onstop = function() {
+      mediaRecorder.onstop = async function() {
         window.__bcsRecording = false;
         audioBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
         previewEl.src = URL.createObjectURL(audioBlob);
@@ -1136,6 +1185,10 @@ function bindRecordHandler() {
         actionsEl.style.display = 'none';
         recBtn.style.display = 'none';
         if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+        // "Did we actually hear you?" — if it's silent or basically empty, don't
+        // quietly auto-save it. Let them listen back and choose. Otherwise save.
+        var chk = await bcsCheckAudible(audioBlob, seconds);
+        if (chk.quiet) { showQuietWarning(); return; }
         doSave(); // AUTO-SAVE the instant they press Stop — no button to forget
       };
       mediaRecorder.start();
@@ -1162,6 +1215,23 @@ function bindRecordHandler() {
     statusEl.style.color = '#5a4a3a';
     resetToStart();
   });
+
+  // Shown when a take came out silent/empty — never auto-saved. The recording is
+  // right there to listen to; they can keep it anyway or try again. (saveBtn is
+  // already wired to doSave, redoBtn to resetToStart.)
+  function showQuietWarning() {
+    statusEl.innerHTML = '<strong style="color:#8a5a00;">Hmm — I didn’t hear much on that one.</strong> The microphone may have been off, or it may help to speak up a little. Give it a listen just below — then keep it, or try again.';
+    statusEl.style.color = '#8a5a00';
+    previewEl.style.display = 'block';
+    actionsEl.style.display = 'block';
+    recBtn.style.display = 'none';
+    saveBtn.style.display = '';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Keep it anyway';
+    redoBtn.style.display = '';
+    redoBtn.disabled = false;
+    redoBtn.textContent = 'Try again';
+  }
 
   async function doSave() {
     if (!audioBlob) return;
@@ -1546,7 +1616,7 @@ function bindFollowUpHandlers(){
     btn.addEventListener('click', async function(){
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
         try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-        catch (e) { msgEl.textContent = 'Couldn’t access your microphone. Please allow it in your browser, then try again.'; msgEl.style.color = '#c0392b'; return; }
+        catch (e) { msgEl.innerHTML = bcsMicHelpHtml(e, false); msgEl.style.color = '#c0392b'; return; }
         chunks = [];
         var types = ['audio/mp4','audio/webm;codecs=opus','audio/webm'], mime = '';
         for (var i=0;i<types.length;i++){ if (window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) { mime = types[i]; break; } }

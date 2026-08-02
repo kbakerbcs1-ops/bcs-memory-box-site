@@ -204,6 +204,65 @@
     var nb=document.getElementById('nextBtn'); if(nb) nb.disabled=false;
   }
 
+  // Warm, specific microphone-recovery guidance (a blocked mic is otherwise a
+  // dead-end). Escalates to email — never a phone number.
+  function bcsMicHelpHtml(err){
+    var name = (err && err.name) || '';
+    var mail = 'mailto:kbakerbcs1@gmail.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
+    var emailBit = ' Still stuck? <a href="' + mail + '" style="color:#8b5a2b;">Email us and we’ll help you</a> — or press Skip.';
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
+      return 'I couldn’t find a microphone. If you’re on a computer without one, please try your phone.' + emailBit;
+    }
+    if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
+      return 'It looks like the microphone is turned off for this page. To turn it on: find the little icon just to the left of the web address at the very top of your screen, tap it, and choose Allow — then press the button again.' + emailBit;
+    }
+    return 'I couldn’t reach the microphone. Please press the button and try once more.' + emailBit;
+  }
+
+  // Best-effort "did we actually hear you?" check — catches a muted/too-quiet
+  // recording saved as silence. Fails open (quiet:false) if analysis is
+  // unsupported, so a real recording is never blocked.
+  async function bcsCheckAudible(blob, secs){
+    try {
+      if (secs != null && secs < 1) return { quiet: true };
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return { quiet: false };
+      var buf = await blob.arrayBuffer();
+      var ctx = new Ctx();
+      var audio = await ctx.decodeAudioData(buf.slice(0));
+      var peak = 0;
+      for (var c = 0; c < audio.numberOfChannels; c++){
+        var d = audio.getChannelData(c);
+        var step = Math.max(1, Math.floor(d.length / 40000));
+        for (var i = 0; i < d.length; i += step){ var v = Math.abs(d[i]); if (v > peak) peak = v; }
+      }
+      try { ctx.close(); } catch(e){}
+      if (audio.duration < 1) return { quiet: true };
+      if (peak < 0.02) return { quiet: true };
+      return { quiet: false };
+    } catch(e){ return { quiet: false }; }
+  }
+
+  // A take came out silent/empty — don't quietly upload it. Let them listen,
+  // try again, or keep it anyway. Keeps the recording safe either way.
+  function showQuietWarningFS(blob){
+    uploading=false; window.__bcsRecording=false;
+    var recArea=document.getElementById('recordArea');
+    if(recArea) recArea.style.display='none';
+    var status=document.getElementById('status');
+    if(!status){ uploadAnswer(blob); return; }
+    var url=URL.createObjectURL(blob); var a=null;
+    status.innerHTML =
+      '<div style="color:#8a5a00;font-weight:700;margin-bottom:8px;">Hmm — I didn’t hear much on that one.</div>'+
+      '<div style="color:#5a4a3a;margin-bottom:12px;line-height:1.5;">The microphone may have been off, or it might help to speak up a little. Give it a listen, then keep it or try again.</div>'+
+      '<button class="primary" id="fsQuietListen" style="margin:4px;">▶ Listen</button>'+
+      '<button class="primary" id="fsQuietRetry" style="margin:4px;background:#6f4720;">↻ Try again</button>'+
+      '<button class="hear" id="fsQuietKeep" style="display:block;margin:12px auto 0;">Keep it anyway →</button>';
+    document.getElementById('fsQuietListen').onclick=function(){ try{ if(a){a.pause();} a=new Audio(url); a.play().catch(function(){}); }catch(e){} };
+    document.getElementById('fsQuietRetry').onclick=function(){ try{ if(a)a.pause(); }catch(e){} render(); };
+    document.getElementById('fsQuietKeep').onclick=function(){ try{ if(a)a.pause(); }catch(e){} uploadAnswer(blob); };
+  }
+
   async function toggleRecord(){
     var recBtn=document.getElementById('recBtn'), hint=document.getElementById('hint'), timer=document.getElementById('timer');
     if(recording){ // STOP
@@ -212,16 +271,20 @@
       recBtn.className='recbtn'; hint.textContent='One moment…'; return;
     }
     stopClip();
+    hint.innerHTML='Your browser may ask to use the microphone — just tap <strong>Allow</strong>.';
     try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
-    catch(e){ hint.textContent='Please allow microphone access, then press the button again. (You can also skip.)'; return; }
+    catch(e){ hint.innerHTML = bcsMicHelpHtml(e); return; }
     chunks=[];
     var types=['audio/mp4','audio/webm;codecs=opus','audio/webm'], mime='';
     for(var i=0;i<types.length;i++){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])){ mime=types[i]; break; } }
     mediaRecorder = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream);
     mediaRecorder.ondataavailable=function(e){ if(e.data && e.data.size) chunks.push(e.data); };
-    mediaRecorder.onstop=function(){
+    mediaRecorder.onstop=async function(){
       var blob=new Blob(chunks,{type:(mediaRecorder.mimeType||'audio/webm')});
       if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; }
+      // Catch a silent/empty take before it saves without them realizing.
+      var chk = await bcsCheckAudible(blob, seconds);
+      if(chk.quiet){ showQuietWarningFS(blob); return; }
       uploadAnswer(blob);
     };
     mediaRecorder.start(); recording=true;
