@@ -989,16 +989,18 @@
       var heroLink = document.getElementById('hero-return-link');
       if (cont) {
         cont.innerHTML =
-          (savedName ? '<p style="font-size:20px;margin:0 0 14px;">Welcome back, ' + savedName + '!</p>' : '') +
+          '<p style="font-size:20px;margin:0 0 14px;">Welcome back' + (savedName ? ', ' + savedName : '') + '!</p>' +
           '<a href="' + portal + '" class="btn-primary" style="display:inline-block;border:none;cursor:pointer;text-decoration:none;">Continue your story &rarr;</a>';
         cont.style.display = 'block';
       }
-      if (heading) heading.textContent = 'Welcome back';
-      if (intro) {
-        intro.textContent = "On another device? Enter your email and we'll send your link there too.";
-        intro.style.fontSize = '16px';
-        intro.style.color = '#ffffff';
-      }
+      // Returning visitor on their own device \u2192 show ONE clear action: the
+      // Continue button. Hide the section heading, the intro line, and the email
+      // box. (Anyone who actually needs a link emailed is on a device that does
+      // NOT remember them, where the full "Already started \u2014 or lost your link?"
+      // box appears automatically.)
+      if (heading) heading.style.display = 'none';
+      if (intro) intro.style.display = 'none';
+      if (emailEl && emailEl.parentNode) emailEl.parentNode.style.display = 'none';
       if (heroLink) { heroLink.textContent = 'Continue your story \u2192'; heroLink.setAttribute('href', portal); }
     }
   } catch (e) { /* storage off — the email box below still works */ }
