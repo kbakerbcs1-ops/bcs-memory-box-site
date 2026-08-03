@@ -428,9 +428,27 @@ router.post('/comp-customer', requireAdmin, async (req, res) => {
     }
 
     const existing = await db.queryOne(
-      'SELECT id, access_token FROM customers WHERE email = $1', [email]);
+      'SELECT id, access_token, is_couple FROM customers WHERE email = $1', [email]);
     if (existing) {
       const url = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(existing.access_token);
+      // If a partner name is given, UPGRADE the existing account to a couple
+      // (reuse it) instead of erroring — so an existing tester can become a
+      // couple in one click, and their link is re-sent.
+      if (isCouple) {
+        await db.query(
+          'UPDATE customers SET is_couple = TRUE, partner_name = $1 WHERE id = $2',
+          [partnerName, existing.id]
+        );
+        let reSent = true;
+        try { await mailer.sendStoryLink(email, name, existing.access_token, true); }
+        catch (e) { reSent = false; console.error('[admin/comp-customer] couple upgrade re-send failed:', e.message); }
+        return res.json({
+          ok: true, upgraded: true, isCouple: true, portalUrl: url, emailed: reSent,
+          message: reSent
+            ? ('Updated ' + name + ' & ' + partnerName + ' to a couple account — link re-sent to ' + email + '.')
+            : ('Updated ' + name + ' & ' + partnerName + ' to a couple account, but the email did not send. Share this link: ' + url),
+        });
+      }
       return res.status(409).json({ error: 'A customer with that email already exists.', portalUrl: url });
     }
 
