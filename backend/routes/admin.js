@@ -420,6 +420,8 @@ router.post('/comp-customer', requireAdmin, async (req, res) => {
   try {
     const name = (req.body.name || '').trim();
     const email = (req.body.email || '').trim().toLowerCase();
+    const partnerName = (req.body.partnerName || '').trim(); // if set → a COUPLE account
+    const isCouple = !!partnerName;
     if (!name) return res.status(400).json({ error: 'Please enter a name.' });
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       return res.status(400).json({ error: 'Please enter a valid email address.' });
@@ -434,10 +436,10 @@ router.post('/comp-customer', requireAdmin, async (req, res) => {
 
     const accessToken = db.randomToken(24);
     const created = await db.queryOne(
-      `INSERT INTO customers (email, name, access_token, status, paid_at)
-       VALUES ($1, $2, $3, 'recording', NOW())
+      `INSERT INTO customers (email, name, access_token, status, paid_at, is_couple, partner_name)
+       VALUES ($1, $2, $3, 'recording', NOW(), $4, $5)
        RETURNING id, access_token`,
-      [email, name, accessToken]);
+      [email, name, accessToken, isCouple, partnerName || null]);
 
     const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(created.access_token);
 
@@ -455,9 +457,10 @@ router.post('/comp-customer', requireAdmin, async (req, res) => {
       customerId: created.id,
       portalUrl: portalUrl,
       emailed: emailed,
+      isCouple: isCouple,
       message: emailed
-        ? ('Added ' + name + ' as a free tester — welcome email sent to ' + email + '.')
-        : ('Added ' + name + ', but the welcome email did not send. Share this link with them directly: ' + portalUrl),
+        ? ('Added ' + (isCouple ? (name + ' & ' + partnerName + ' as a couple tester') : (name + ' as a free tester')) + ' — welcome email sent to ' + email + '.')
+        : ('Added ' + (isCouple ? (name + ' & ' + partnerName) : name) + ', but the welcome email did not send. Share this link with them directly: ' + portalUrl),
     });
   } catch (err) {
     console.error('[admin/comp-customer] error:', err);

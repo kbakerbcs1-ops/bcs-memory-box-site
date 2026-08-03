@@ -79,11 +79,63 @@ const MEMOIR_SYSTEM_PROMPT = [
 ].join("\n");
 
 // ----------------------------------------------------------------------------
+// The COUPLE memoir system prompt — for two people recording together into one
+// joint "our life together" book. Weaves two voices, keeps both perspectives
+// when they differ, and attributes each memory to the right person using the
+// diarized (Speaker A/B) transcript + the two names. Validated end-to-end.
+// ----------------------------------------------------------------------------
+const COUPLE_MEMOIR_SYSTEM_PROMPT = [
+"You are a gifted memoir writer. Your job is to turn a COUPLE's recorded life story into a single finished memoir that reads like a warm, flowing STORY of two lives that became one — never a transcript, never a list of names and dates, and never a cold he-said/she-said interview. The two people recorded a series of audio clips together. Their words are transcribed below and each line is labeled with the speaker the system heard (\"Speaker A\" / \"Speaker B\"). They spoke in whatever order things came to them, finishing each other's sentences, correcting each other, and remembering the same moments differently. Shape what they said into a real book about THEIR LIFE TOGETHER, in THEIR OWN VOICES.",
+"",
+"FIRST, FIGURE OUT WHO IS WHO. You are told the two storytellers' names. The transcript labels are only 'Speaker A' and 'Speaker B' — you must map each label to the right name using context (who is called 'my wife'/'my husband', who is addressed by name, who tells which stories). Once you are confident, attribute their words to the correct person by NAME. If you truly cannot tell which of the two said something, attribute it to both of them together ('they', 'the two of them') rather than guessing wrong. NEVER put words in the wrong person's mouth.",
+"",
+"THREE UNBREAKABLE PRINCIPLES:",
+"1. CHAPTERS FIT THIS SHARED LIFE. Do NOT use a fixed template. Read everything first and divide it into the chapters that fit THIS couple. The spine of the book is their life TOGETHER — how they met, courting, the wedding, building a home, children, the hard times and the good years, and who they are now. Where each person told a bit of their OWN early life (before they met), you may give that a short early chapter each, but keep the heart of the book on the life they built together. Give each chapter an evocative, specific title that carries a bit of the story. End with a short reflective closing chapter.",
+"2. THEIR OWN VOICES — TWO OF THEM. Keep each person's exact vocabulary, idioms, rhythm, and level of formality; the two of them do not sound identical, and the book should let each voice come through. Weave the two voices into one flowing narrative — sometimes telling a shared moment in the third person ('They were married in the spring of 1961'), sometimes letting one of them tell it in their own words ('Nancy still laughs about the cake'), and — this is the charm of a couple's book — WHEN THEY REMEMBER THE SAME EVENT DIFFERENTLY, KEEP BOTH memories side by side ('Bill swears the band played too loud; Nancy only remembers dancing'). Never flatten two viewpoints into one, and never invent agreement they didn't express.",
+"3. STRICTLY THEIR OWN WORDS — smoothed, never invented. This is the firm line and it is absolute. You MAY: reorder and group what they said, connect fragments into flowing paragraphs, trim filler/repetition/false starts, fix grammar, repair garbled spoken sentences so each reads smoothly, correct obvious transcription errors (especially garbled names), and attribute each memory to the right person. You MAY NOT: invent a memory, scene, place, event, feeling, or line of dialogue; add sensory details they never mentioned; assign feelings they did not express; put a story in the wrong person's mouth; or fill a gap with a plausible-sounding fact or date. Every sentence must be something one of them ACTUALLY TOLD US — just told better. Preserve their uncertainty ('around 1962' stays 'around 1962'); never fabricate certainty.",
+"",
+"HOW TO WRITE IT:",
+"- OPEN ON A VIVID, REAL SHARED MEMORY — ideally the moment they met or a scene that captures the two of them — never on birth dates or genealogy. Find the most evocative TRUE thing they said and lead the whole book with it.",
+"- Within each chapter, put things in a natural order (usually chronological) and connect the fragments into flowing paragraphs, using only the lightest transitions.",
+"- Attribute naturally and often, so the reader always knows whose memory this is: 'Bill remembers…', 'To Nancy, it was…', 'The way she tells it…', 'He still says…'. Use their first names, not 'Speaker A'.",
+"- Tell each memory as a little scene when they gave it that shape. Do not flatten a good story into a bare fact.",
+"- WEAVE dates, places, and names naturally into the prose. Do NOT pile them into lists.",
+"- Combine multiple recordings about the same topic into ONE coherent passage; never repeat the same anecdote twice (unless the two of them tell it differently — then hold both).",
+"- Render painful memories honestly but gently, keeping the couple's own restraint. Never force emotion they did not express.",
+"",
+"GENEALOGY GOES AT THE BACK. Keep pure names-and-dates (each of their parents, grandparents, ancestors, birth years) OUT of the opening and body. If they gave genealogy, gather it into a single final chapter titled exactly '## Family Roots' at the very end — a short, clean summary of who came before EACH of them (a short paragraph for his side, a short paragraph for hers). The body of the book is THE LIFE ITSELF.",
+"",
+"PHOTOGRAPHS (when a photo list is provided in the user's message): place each photo next to the passage it best fits by inserting a line containing ONLY the marker [[PHOTO:N]] on its own line between paragraphs. Use each number at most once, only numbers in the list, match by caption; if a photo has no clear home, leave it out (leftovers are collected automatically). Never describe the photo in prose — only the bare marker line.",
+"",
+"OUTPUT FORMAT — return ONLY clean Markdown, nothing else (no preamble, no notes). Use this structure:",
+"",
+"# The Life and Times of [First name] and [First name]",
+"",
+"## [An evocative chapter title]",
+"[flowing prose]",
+"",
+"## [The next evocative chapter title]",
+"[flowing prose]",
+"",
+"... as many chapters as this shared life needs ...",
+"",
+"## Reflections",
+"[a short closing, in their own looking-back — what they built, what they'd say to the family]",
+"",
+"## Family Roots",
+"[include ONLY if they gave genealogy; a short clean summary of each of their parents/grandparents/ancestors and years]",
+"",
+"If they simply did not talk about some part of life, do NOT force a chapter and do NOT write filler — just leave it out.",
+"",
+"Begin the memoir IMMEDIATELY. No preamble. No explanation. No notes at the end. Just the memoir."
+].join("\n");
+
+// ----------------------------------------------------------------------------
 // Top-level orchestrator. Throws on any error; caller decides how to handle.
 // ----------------------------------------------------------------------------
 async function runCleanupPipeline(customerId) {
   const customer = await db.queryOne(
-    'SELECT id, email, name, access_token, follow_up_done FROM customers WHERE id = $1',
+    'SELECT id, email, name, access_token, follow_up_done, is_couple, partner_name FROM customers WHERE id = $1',
     [customerId]
   );
   if (!customer) throw new Error('Customer not found: ' + customerId);
@@ -109,7 +161,7 @@ async function runCleanupPipeline(customerId) {
       console.log('[cleanup] Transcribing recording ' + r.id);
       try {
         await db.query("UPDATE recordings SET transcript_status = 'transcribing' WHERE id = $1", [r.id]);
-        const transcript = await transcribeFromR2(r.storage_key);
+        const transcript = await transcribeFromR2(r.storage_key, customer.is_couple ? { speakerLabels: true, speakersExpected: 2 } : {});
         await db.query(
           `UPDATE recordings SET transcript = $1, transcript_status = 'completed' WHERE id = $2`,
           [transcript, r.id]
@@ -177,7 +229,14 @@ async function runCleanupPipeline(customerId) {
     }
     console.log('[cleanup] Loaded ' + photos.length + ' photo(s) for placement');
 
-    const memoirMarkdown = await polishWithClaude(customer.name, combined, photos, answeredQA);
+    // For a couple, the "book name" is both first names, and generation runs
+    // through the two-voice writer on the diarized transcript.
+    const bookName = customer.is_couple
+      ? ((customer.name || '') + (customer.partner_name ? ' & ' + customer.partner_name : ''))
+      : customer.name;
+    const memoirMarkdown = customer.is_couple
+      ? await polishCoupleWithClaude(customer.name, customer.partner_name, combined, photos, answeredQA)
+      : await polishWithClaude(customer.name, combined, photos, answeredQA);
 
     // 4. Render to .docx (with photos placed inline)
     console.log('[cleanup] Rendering .docx');
@@ -201,7 +260,7 @@ async function runCleanupPipeline(customerId) {
       console.error('[cleanup] interior PDF failed (non-fatal): ' + e.message);
     }
     try {
-      const cov = await renderAndUploadCoverPdf(customerId, customer.name, pageCount || 24, 'cover-v1');
+      const cov = await renderAndUploadCoverPdf(customerId, bookName, pageCount || 24, 'cover-v1');
       coverPdfKey = cov.key;
       console.log('[cleanup] cover PDF rendered (spine ' + cov.spineIn.toFixed(3) + ' in)');
     } catch (e) {
@@ -227,7 +286,9 @@ async function runCleanupPipeline(customerId) {
     // 7. FIRST DRAFT ONLY: ask the storyteller a few gentle follow-up questions
     //    to enrich thin stories, then pause for their spoken answers. On the
     //    re-run (answers present) or if they skipped, we finalize instead.
-    if (!customer.follow_up_done && answeredQA.length === 0) {
+    // Follow-up questions are single-storyteller for now; couples skip straight
+    // to draft-ready in v1 (couple follow-ups can come later).
+    if (!customer.is_couple && !customer.follow_up_done && answeredQA.length === 0) {
       let questions = [];
       try { questions = await generateFollowUpQuestions(combined, memoirMarkdown); }
       catch (e) { console.error('[cleanup] follow-up question generation failed: ' + e.message); }
@@ -278,7 +339,8 @@ async function runCleanupPipeline(customerId) {
 // AssemblyAI accepts a URL or raw bytes upload — we use the raw bytes path
 // since the R2 file is private.
 // ----------------------------------------------------------------------------
-async function transcribeFromR2(storageKey) {
+async function transcribeFromR2(storageKey, opts) {
+  opts = opts || {};
   const audioBuffer = await storage.getObjectBuffer(storageKey);
 
   // 1. Upload bytes to AssemblyAI
@@ -290,18 +352,24 @@ async function transcribeFromR2(storageKey) {
   if (!upResp.ok) throw new Error('AAI upload failed: ' + await upResp.text());
   const { upload_url } = await upResp.json();
 
-  // 2. Submit for transcription
+  // 2. Submit for transcription. For couples we turn on speaker diarization so
+  //    the two-voice memoir writer can tell who said what.
+  const submitBody = {
+    audio_url: upload_url,
+    language_code: 'en',
+    speech_models: ['universal-2'],
+  };
+  if (opts.speakerLabels) {
+    submitBody.speaker_labels = true;
+    if (opts.speakersExpected) submitBody.speakers_expected = opts.speakersExpected;
+  }
   const subResp = await fetch('https://api.assemblyai.com/v2/transcript', {
     method: 'POST',
     headers: {
       'Authorization': process.env.ASSEMBLYAI_API_KEY,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      audio_url: upload_url,
-      language_code: 'en',
-      speech_models: ['universal-2'],
-    }),
+    body: JSON.stringify(submitBody),
   });
   if (!subResp.ok) throw new Error('AAI submit failed: ' + await subResp.text());
   const { id: tid } = await subResp.json();
@@ -314,7 +382,16 @@ async function transcribeFromR2(storageKey) {
       headers: { 'Authorization': process.env.ASSEMBLYAI_API_KEY },
     });
     const data = await stResp.json();
-    if (data.status === 'completed') return data.text || '';
+    if (data.status === 'completed') {
+      // When diarization is on, return a speaker-labeled transcript so the
+      // couple writer can attribute lines. Fall back to plain text otherwise.
+      if (opts.speakerLabels && Array.isArray(data.utterances) && data.utterances.length) {
+        return data.utterances
+          .map(function (u) { return 'Speaker ' + (u.speaker || '?') + ': ' + (u.text || ''); })
+          .join('\n');
+      }
+      return data.text || '';
+    }
     if (data.status === 'error') throw new Error('AAI transcription error: ' + data.error);
   }
   throw new Error('Transcription timed out (10 minutes)');
@@ -364,6 +441,56 @@ async function polishWithClaude(customerName, combinedTranscripts, photos, answe
     }),
   });
   if (!resp.ok) throw new Error('Claude API error: ' + await resp.text());
+  const data = await resp.json();
+  const text = (data.content || []).map(b => b.text || '').join('');
+  return text.trim();
+}
+
+// ----------------------------------------------------------------------------
+// COUPLE version: two storytellers -> one joint memoir. Same photo/Q&A handling
+// as the single-person writer, but uses the two-voice system prompt and passes
+// both names plus the diarized (Speaker A/B) transcript.
+// ----------------------------------------------------------------------------
+async function polishCoupleWithClaude(name1, name2, combinedTranscripts, photos, answeredQA) {
+  photos = photos || [];
+  answeredQA = answeredQA || [];
+  let photoBlock = '';
+  if (photos.length) {
+    photoBlock =
+      "\n\n----\n\nThe couple also uploaded " + photos.length + " photograph(s), listed below by number with the caption they wrote. Place each photo next to the part of the story it best fits by inserting a marker ON ITS OWN LINE in EXACTLY this form: [[PHOTO:N]].\n" +
+      "- Use each photo number AT MOST ONCE, and only numbers that appear in the list.\n" +
+      "- Put the marker on its own line, between paragraphs, right after the story it relates to.\n" +
+      "- Match using the caption. If a photo has no clear home, leave it out (leftovers are added to a Photographs section automatically).\n" +
+      "- Do NOT describe the photo in prose; only insert the marker line.\n\n" +
+      "PHOTOS:\n" +
+      photos.map(function (p, i) { return "Photo " + (i + 1) + ": " + (p.caption || '(no caption)'); }).join('\n');
+  }
+  let qaBlock = '';
+  if (answeredQA.length) {
+    qaBlock =
+      "\n\n----\n\nAFTER a first draft, the couple was asked a few follow-up questions and gave these SPOKEN answers. Weave each answer into the relevant part of the story, attributed to the right person, exactly like the rest of the memoir. Do NOT add a question-and-answer section, and follow the same firm rule: use only what they actually said.\n\n" +
+      answeredQA.map(function (qa, i) { return "Follow-up " + (i + 1) + "\nQuestion we asked: " + qa.question + "\nTheir spoken answer: " + qa.answer; }).join("\n\n");
+  }
+  const userMsg =
+    "The two storytellers are a couple. Their names are: " + (name1 || 'the first storyteller') + " and " + (name2 || 'the second storyteller') + ".\n\n" +
+    "Here is the transcript of their recordings, each line labeled with the speaker the system heard. Figure out which of them is " + (name1 || 'the first') + " and which is " + (name2 || 'the second') + " from context, then organize and polish everything into their joint memoir per the rules above:\n\n" +
+    combinedTranscripts + qaBlock + photoBlock;
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 16000,
+      system: COUPLE_MEMOIR_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude API error (couple): ' + await resp.text());
   const data = await resp.json();
   const text = (data.content || []).map(b => b.text || '').join('');
   return text.trim();

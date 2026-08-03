@@ -305,9 +305,10 @@ async function showDashboard() {
         '<h2 style="margin:0 0 4px;font-size:18px;">Add a free tester</h2>' +
         '<p style="margin:0 0 12px;color:#6b5f48;font-size:14px;">Creates a free account (no payment, ready to record) and emails them their story link. For beta testers or gifts.</p>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
-          '<input id="comp-name" type="text" placeholder="Their name (e.g. Margaret)" style="flex:1;min-width:150px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
-          '<input id="comp-email" type="email" placeholder="Their email address" style="flex:1.4;min-width:200px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
-          '<button id="comp-add-btn" class="btn">Add free tester</button>' +
+          '<input id="comp-name" type="text" placeholder="Their name (e.g. Margaret)" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
+          '<input id="comp-partner" type="text" placeholder="Partner (optional → couple)" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
+          '<input id="comp-email" type="email" placeholder="Their email address" style="flex:1.4;min-width:180px;padding:10px 12px;border:1px solid #c9bfae;border-radius:6px;font-size:15px;" />' +
+          '<button id="comp-add-btn" class="btn">Add tester</button>' +
         '</div>' +
         '<p id="comp-status" style="margin:12px 0 0;font-size:14px;min-height:1em;"></p>' +
       '</div>';
@@ -342,13 +343,15 @@ async function showDashboard() {
         var statusEl = document.getElementById('comp-status');
         var name = (nameEl.value || '').trim();
         var email = (emailEl.value || '').trim();
+        var partnerEl = document.getElementById('comp-partner');
+        var partnerName = (partnerEl && partnerEl.value || '').trim();
         if (!name || !email) { statusEl.style.color = '#a33'; statusEl.textContent = 'Please enter both a name and an email address.'; return; }
         compBtn.disabled = true; var old = compBtn.textContent; compBtn.textContent = 'Adding…';
-        statusEl.style.color = '#6b5f48'; statusEl.textContent = 'Creating the account and sending their link…';
+        statusEl.style.color = '#6b5f48'; statusEl.textContent = partnerName ? 'Creating the couple account and sending their link…' : 'Creating the account and sending their link…';
         try {
-          var res = await api('/api/admin/comp-customer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: name, email: email }) });
+          var res = await api('/api/admin/comp-customer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: name, email: email, partnerName: partnerName }) });
           statusEl.style.color = '#2e6b2e'; statusEl.textContent = res.message || ('Added ' + name + '.');
-          nameEl.value = ''; emailEl.value = '';
+          nameEl.value = ''; emailEl.value = ''; if (partnerEl) partnerEl.value = '';
         } catch (e) {
           statusEl.style.color = '#a33'; statusEl.textContent = e.message || 'Could not add them. Please try again.';
         }

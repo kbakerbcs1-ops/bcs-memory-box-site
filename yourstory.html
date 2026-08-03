@@ -279,10 +279,19 @@ function renderRecordingPage(data) {
   var html = renderStatusBar(c.status);
   html += '<div class="card">';
   var firstName = escapeHtml((c.name || '').split(' ')[0] || 'there');
+  var isCouple = !!c.isCouple;
+  var partnerFirst = escapeHtml((c.partnerName || '').split(' ')[0] || '');
+  var bothNames = (isCouple && partnerFirst) ? (firstName + ' and ' + partnerFirst) : firstName;
   if (recordings.length === 0) {
     html += '<div class="eyebrow">A note from Ken</div>';
-    html += '<h1>Welcome, ' + firstName + ' — and thank you.</h1>';
-    html += '<p>It’s an honor to help you put your life into words, in your own voice, for the people who love you.</p>';
+    html += '<h1>Welcome, ' + bothNames + ' — and thank you.</h1>';
+    html += '<p>It’s an honor to help you put your ' + (isCouple ? 'life together' : 'life') + ' into words, in your own voice' + (isCouple ? 's' : '') + ', for the people who love you.</p>';
+    if (isCouple) {
+      html += '<div style="background:#f4efe2;border:1px solid #e8dfc9;border-radius:8px;padding:14px 16px;margin:14px 0 4px;">' +
+        '<p style="margin:0 0 6px;"><strong>You’re doing this together.</strong></p>' +
+        '<p style="margin:0;">Sit down in the same room and record together — take turns, jog each other’s memory, and don’t worry about talking over one another. Just say each other’s names naturally as you talk, so we can tell your two voices apart and weave them into one book about your life together. And when you remember the same day differently — all the better; we keep both.</p>' +
+      '</div>';
+    }
     html += '<p style="margin-bottom:6px;"><strong>Here’s all there is to it:</strong></p>';
     html += '<ul style="margin:0 0 14px 22px;color:#3a3530;font-size:16px;line-height:1.6;">' +
       '<li style="margin-bottom:9px;"><strong>Press the big “Start recording” button and just talk</strong> — like you’re telling a story at the kitchen table. Press it again when you’re finished, and it saves all by itself.</li>' +

@@ -106,6 +106,7 @@ router.get('/me', async (req, res) => {
 
     const customer = await db.queryOne(
       `SELECT id, email, name, status, paid_at, created_at, plan, approved_at,
+              is_couple, partner_name,
               ship_name, ship_address1, ship_address2, ship_city, ship_state, ship_zip, ship_country, ship_phone
        FROM customers
        WHERE access_token = $1`,
@@ -167,6 +168,8 @@ router.get('/me', async (req, res) => {
         status: customer.status,
         paidAt: customer.paid_at,
         createdAt: customer.created_at,
+        isCouple: !!customer.is_couple,
+        partnerName: customer.partner_name || null,
         plan: customer.plan || pricing.DEFAULT_PLAN,
         // Does this plan include a shipped hardcover? (drives the address form)
         includesHardcover: pricing.HARDCOVER_PLANS.has(customer.plan),
