@@ -1734,6 +1734,15 @@ function renderFollowUp(data){
   // photograph — without this they are stuck (the photo uploader used to exist
   // only on the recording screen).
   html += renderPhotoCard((data && data.photos) || []);
+  // ...and a way to record a WHOLE NEW story, not just answer the questions
+  // above. reopenStory() flips them back to the recording screen; the backend
+  // marks follow-ups done so this can't loop.
+  html += '<div class="card" style="background:#f7f3ea;border:1px solid #e8dfc9;text-align:center;">' +
+      '<h2 style="margin-bottom:6px;">Remembered a whole new story?</h2>' +
+      '<p style="max-width:540px;margin:0 auto 16px;">The questions above are just to draw out a little more. If you have thought of a <strong>completely new story</strong> you want in your book, you can go record it &mdash; nothing you have already recorded or answered is lost.</p>' +
+      '<button class="btn btn-large" onclick="reopenStory(this)">\uD83C\uDF99 Record a new story</button>' +
+      '<p id="reopen-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+    '</div>';
   return html;
 }
 
