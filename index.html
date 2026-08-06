@@ -460,6 +460,8 @@
         .trial-modal-close{position:absolute;top:8px;right:14px;background:none;border:none;color:#8b5a2b;font-size:32px;line-height:1;cursor:pointer;}
         .trial-modal-head h2{font-family:'Merriweather',Georgia,serif;color:#2a1f15;font-size:24px;margin:0 0 6px;text-shadow:none;}
         .trial-modal-head p{color:#5a4a3a;font-size:16px;margin:0 0 18px;}
+        .trial-notype-badge{display:inline-flex;align-items:center;gap:8px;background:#2f5d3a;color:#fff;border-radius:11px;padding:9px 14px;font-family:'Open Sans',Arial,sans-serif;font-size:14px;font-weight:600;line-height:1.35;margin:0 0 14px;text-shadow:none;}
+        .trial-notype-tag{display:table;background:#efe4cf;color:#8B1A2B;font-weight:700;font-family:'Open Sans',Arial,sans-serif;font-size:14px;padding:6px 15px;border-radius:999px;margin:12px auto 0;}
         #trial-modal .trial-widget{background:transparent;box-shadow:none;padding:0;margin:0;}
     </style>
 </head>
@@ -514,21 +516,23 @@
   <div class="trial-modal-inner" onclick="event.stopPropagation()">
     <button class="trial-modal-close" onclick="closeTrial()" aria-label="Close">&times;</button>
     <div class="trial-modal-head">
+      <div class="trial-notype-badge">🎙 You talk. We do the writing. No typing, ever.</div>
       <h2>Hear 90 seconds of your story — free</h2>
-      <p>Tell me one memory. I'll polish it and email it to your inbox in a couple of minutes.</p>
+      <p>Just tell me one memory <strong>out loud</strong>. I'll turn it into beautiful writing and email it to you in a couple of minutes.</p>
     </div>
     <div id="trial-widget" class="trial-widget">
         <div id="trial-step-1">
             <input type="text" id="trial-name" placeholder="Your first name (optional)" autocomplete="given-name" />
-            <input type="email" id="trial-email" placeholder="Your email address" autocomplete="email" required />
-            <button id="trial-start" class="trial-btn-large">Start recording</button>
-            <p class="trial-hint">Your browser may ask for microphone permission — click "Allow."</p>
+            <input type="email" id="trial-email" placeholder="Your email — where I'll send your story" autocomplete="email" required />
+            <button id="trial-start" class="trial-btn-large">Start — then just talk</button>
+            <p class="trial-hint">Your phone or computer may ask to use the microphone — tap "Allow."</p>
         </div>
         <div id="trial-step-2" hidden>
-            <p class="trial-prompt">Tell me a memory — a person, a place, a moment that matters.</p>
-            <button id="trial-record" class="trial-record-btn" title="Tap to record">●</button>
+            <p class="trial-prompt">Press the button and just <strong>talk</strong> — say a memory out loud: a person, a place, a moment that matters, like you're telling a friend at the kitchen table.</p>
+            <p class="trial-notype-tag">Nothing to type — just speak</p>
+            <button id="trial-record" class="trial-record-btn" title="Tap to record">🎙</button>
             <div id="trial-timer" class="trial-timer">0:00 / 1:30</div>
-            <p class="trial-hint">Up to 90 seconds. Tap the red button again to stop.</p>
+            <p class="trial-hint">Up to 90 seconds. Tap the button again to stop.</p>
         </div>
         <div id="trial-step-3" hidden>
             <p>Sounds good? Send it to your inbox, or record again.</p>
