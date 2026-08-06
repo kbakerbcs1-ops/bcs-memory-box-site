@@ -932,6 +932,18 @@ router.post('/reopen-recording', async (req, res) => {
       await db.query("UPDATE customers SET status = 'recording' WHERE id = $1", [customer.id]);
       return res.json({ ok: true, reopened: true, message: 'You can add more to your story now.' });
     }
+    // Sitting on the follow-up questions and want to record a WHOLE NEW story
+    // instead of just answering? Let them straight back into recording.
+    // We also mark follow_up_done so the re-run finalizes to a draft rather than
+    // generating a SECOND batch of questions on top of the existing ones (the
+    // questions table is insert-only, so a second batch would stack up and the
+    // customer would look stuck in a loop). Answers they already gave are still
+    // woven in — cleanup reads answered Q&A from the database on every run,
+    // regardless of this flag.
+    if (customer.status === 'follow_up') {
+      await db.query("UPDATE customers SET status = 'recording', follow_up_done = TRUE WHERE id = $1", [customer.id]);
+      return res.json({ ok: true, reopened: true, message: 'You can add more to your story now.' });
+    }
     if (customer.status === 'processing') {
       return res.json({ ok: true, reopened: false, message: 'Your memoir is being prepared right now. Once it is ready you can add more.' });
     }
