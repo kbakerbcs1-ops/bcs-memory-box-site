@@ -272,6 +272,41 @@ async function resumeCheckout(btn) {
   }
 }
 
+// Photographs — optional. Extracted so EVERY screen that should let a customer
+// add a picture can show the same card. It previously lived inline in the
+// recording page only, which left follow-up customers with no way to add a
+// photo at all (Kelly Wright, Aug 6 2026).
+function renderPhotoCard(photos) {
+  photos = photos || [];
+  var html = '';
+  html += '<div class="card">';
+  html += '<h2>Add photographs <span style="font-weight:normal;color:#888;font-size:17px;">(optional)</span></h2>';
+  html += '<p>Have a favorite picture for your story? Add it here. On your phone, the button opens your camera — just hold up an old photograph and take a picture of it — or choose one you already have. There\'s nothing to figure out; Ken places the photos into your memoir for you.</p>';
+  if (photos.length > 0) {
+    html += '<div class="photo-grid">';
+    photos.forEach(function(p) {
+      var src = API_BASE + '/api/customer/photo/' + p.id + '?token=' + encodeURIComponent(getToken());
+      PHOTO_CAPTIONS[p.id] = (p.caption || '');
+      html += '<div class="photo-tile">' +
+        '<img src="' + src + '" alt="' + escapeHtml(p.caption || 'photo') + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" />' +
+        '<div class="photo-fallback">Photo added ✓</div>' +
+        '<div class="photo-caption" id="pc-' + p.id + '">' + (p.caption ? '<span class="pc-text">' + escapeHtml(p.caption) + '</span>' : '<span class="pc-text" style="color:#9a8b78;font-style:italic;">No name yet</span>') + ' <button type="button" class="pc-edit" data-id="' + p.id + '" style="background:none;border:none;color:#8b5a2b;cursor:pointer;font-size:13px;text-decoration:underline;padding:0;">' + (p.caption ? 'Edit name' : 'Add name + date') + '</button></div>' +
+        '<button class="photo-remove" data-photo-id="' + p.id + '">Remove</button>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="upload-zone">' +
+    '<p style="font-size:17px;color:#5a4a3a;">Add a photograph to go with your story.</p>' +
+    '<input type="text" id="photo-caption" placeholder="Name and date, e.g. Mom and Dad, Christmas 1975 (optional)" style="width:100%;max-width:460px;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:6px;" />' +
+    '<input type="file" id="photo-file" accept="image/*" style="display:none;" />' +
+    '<button class="btn btn-large" id="photo-btn" style="margin:14px auto 0;">📷 Add a photo</button>' +
+    '<p id="photo-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
+  '</div>';
+  html += '</div>';
+  return html;
+}
+
 function renderRecordingPage(data) {
   var c = data.customer;
   var recordings = data.recordings || [];
@@ -383,33 +418,7 @@ function renderRecordingPage(data) {
   '</div>';
   html += '</div>';
 
-  // Photographs — optional, gathered alongside recordings. Ken places them in
-  // the memoir when he polishes the draft, so the customer just adds them here.
-  html += '<div class="card">';
-  html += '<h2>Add photographs <span style="font-weight:normal;color:#888;font-size:17px;">(optional)</span></h2>';
-  html += '<p>Have a favorite picture for your story? Add it here. On your phone, the button opens your camera — just hold up an old photograph and take a picture of it — or choose one you already have. There\'s nothing to figure out; Ken places the photos into your memoir for you.</p>';
-  if (photos.length > 0) {
-    html += '<div class="photo-grid">';
-    photos.forEach(function(p) {
-      var src = API_BASE + '/api/customer/photo/' + p.id + '?token=' + encodeURIComponent(getToken());
-      PHOTO_CAPTIONS[p.id] = (p.caption || '');
-      html += '<div class="photo-tile">' +
-        '<img src="' + src + '" alt="' + escapeHtml(p.caption || 'photo') + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" />' +
-        '<div class="photo-fallback">Photo added ✓</div>' +
-        '<div class="photo-caption" id="pc-' + p.id + '">' + (p.caption ? '<span class="pc-text">' + escapeHtml(p.caption) + '</span>' : '<span class="pc-text" style="color:#9a8b78;font-style:italic;">No name yet</span>') + ' <button type="button" class="pc-edit" data-id="' + p.id + '" style="background:none;border:none;color:#8b5a2b;cursor:pointer;font-size:13px;text-decoration:underline;padding:0;">' + (p.caption ? 'Edit name' : 'Add name + date') + '</button></div>' +
-        '<button class="photo-remove" data-photo-id="' + p.id + '">Remove</button>' +
-      '</div>';
-    });
-    html += '</div>';
-  }
-  html += '<div class="upload-zone">' +
-    '<p style="font-size:17px;color:#5a4a3a;">Add a photograph to go with your story.</p>' +
-    '<input type="text" id="photo-caption" placeholder="Name and date, e.g. Mom and Dad, Christmas 1975 (optional)" style="width:100%;max-width:460px;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:6px;" />' +
-    '<input type="file" id="photo-file" accept="image/*" style="display:none;" />' +
-    '<button class="btn btn-large" id="photo-btn" style="margin:14px auto 0;">📷 Add a photo</button>' +
-    '<p id="photo-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
-  '</div>';
-  html += '</div>';
+  html += renderPhotoCard(photos);
 
   // Done button — fires the cleanup pipeline asynchronously.
   if (recordings.length > 0) {
@@ -1721,6 +1730,10 @@ function renderFollowUp(data){
   html += '<p id="fu-finish-status" class="muted" style="text-align:center;font-size:13px;margin-top:8px;"></p>';
   html += '<p style="text-align:center;margin-top:10px;"><a href="#" id="fu-skip" style="color:#8b5a2b;">Skip these and finish my book as it is</a></p>';
   html += '</div>';
+  // A customer sitting on the follow-up questions still needs a way to add a
+  // photograph — without this they are stuck (the photo uploader used to exist
+  // only on the recording screen).
+  html += renderPhotoCard((data && data.photos) || []);
   return html;
 }
 
