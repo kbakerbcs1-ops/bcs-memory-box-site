@@ -1431,6 +1431,50 @@ function bindRecordHandler() {
   saveBtn.addEventListener('click', doSave);
 }
 
+// Shrink a big photo in the browser before uploading. A memoir photo doesn't
+// need to be 12 megapixels, and a smaller file uploads far faster — and on any
+// device that can decode the image (all Apple devices decode HEIC), the slow
+// server-side HEIC→JPEG conversion is skipped entirely. Resolves to
+// {blob, name} on success, or null (caller keeps the original file) if the
+// browser can't decode/shrink it (e.g. HEIC on a non-Apple browser).
+function shrinkImageForUpload(file) {
+  return new Promise(function (resolve) {
+    try {
+      if (!file) return resolve(null);
+      var looksImage = (file.type && file.type.indexOf('image') === 0) ||
+                       /\.(jpe?g|png|heic|heif|webp|gif|bmp|tiff?)$/i.test(file.name || '');
+      if (!looksImage) return resolve(null);
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return; done = true; try { URL.revokeObjectURL(url); } catch (e) {} resolve(null);
+      }, 20000);
+      function finish(val) { if (done) return; done = true; clearTimeout(timer); try { URL.revokeObjectURL(url); } catch (e) {} resolve(val); }
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          if (!w || !h) return finish(null);
+          var maxEdge = 2000;
+          var scale = Math.min(1, maxEdge / Math.max(w, h));
+          if (scale >= 1) return finish(null); // already small enough — send the original as-is
+          var cw = Math.round(w * scale), ch = Math.round(h * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = cw; canvas.height = ch;
+          canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+          canvas.toBlob(function (blob) {
+            if (!blob) return finish(null);
+            var base = (file.name || 'photo').replace(/\.[^.]+$/, '');
+            finish({ blob: blob, name: base + '.jpg' });
+          }, 'image/jpeg', 0.85);
+        } catch (e) { finish(null); }
+      };
+      img.onerror = function () { finish(null); };
+      img.src = url;
+    } catch (e) { resolve(null); }
+  });
+}
+
 // Wire the photo picker + upload POST. Mirrors the audio uploader, posting to
 // /api/customer/upload-photo with FormData fields 'photo' and optional 'caption'.
 function bindPhotoHandler() {
@@ -1457,8 +1501,17 @@ function bindPhotoHandler() {
 
     btn.disabled = true;
     btn.textContent = 'Adding… (' + formatSize(file.size) + ')';
-    statusEl.textContent = 'Sending your photo to secure storage…';
+    statusEl.textContent = 'Getting your photo ready…';
     statusEl.style.color = '#5a4a3a';
+
+    // Shrink the photo in the browser first (fast upload; skips slow server-side
+    // HEIC conversion when the browser can decode it). Falls back to the
+    // original file if the browser can't shrink it — no regression.
+    var uploadFile = file, uploadName = file.name;
+    try {
+      var shrunk = await shrinkImageForUpload(file);
+      if (shrunk && shrunk.blob) { uploadFile = shrunk.blob; uploadName = shrunk.name; }
+    } catch (e) { /* keep the original file */ }
 
     // Upload with a real time limit + automatic retries, so a big iPhone photo
     // (converted server-side, which is slow) can NEVER leave the customer stuck
@@ -1471,7 +1524,7 @@ function bindPhotoHandler() {
         : 'Still sending — a large photo or a waking server can take a little longer. Hang tight…';
       statusEl.style.color = '#5a4a3a';
       var fd = new FormData();
-      fd.append('photo', file, file.name);
+      fd.append('photo', uploadFile, uploadName);
       fd.append('caption', (captionInput && captionInput.value) || '');
       var ctrl = new AbortController();
       var to = setTimeout(function(){ ctrl.abort(); }, PER_TRY_MS);
