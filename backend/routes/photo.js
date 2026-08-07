@@ -88,6 +88,26 @@ router.post('/', upload.single('photo'), async (req, res) => {
     // Bake in EXIF orientation so portrait photos are stored (and shown) upright.
     photoBuffer = await autoOrient(photoBuffer, photoMime, photoName);
 
+    // Downscale large photos (a memoir photo doesn't need to be 12 megapixels).
+    // This keeps storage light and makes uploads fast. The browser now shrinks
+    // most photos before sending, so this mainly catches full-size files from
+    // browsers that couldn't (e.g. HEIC on non-Apple browsers). Best-effort: on
+    // any failure the original buffer is kept.
+    try {
+      const sharp = require('sharp');
+      const meta = await sharp(photoBuffer).metadata();
+      if (meta.width && meta.height && Math.max(meta.width, meta.height) > 2000) {
+        photoBuffer = await sharp(photoBuffer)
+          .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        photoMime = 'image/jpeg';
+        photoName = photoName.replace(/\.[^.]+$/, '') + '.jpg';
+      }
+    } catch (e) {
+      console.error('[photo upload] resize skipped: ' + e.message);
+    }
+
     // Derive a safe extension from the (possibly converted) filename or mime type.
     const ext = ((photoName || '').split('.').pop() ||
                  (photoMime || '').split('/').pop() ||
