@@ -1460,27 +1460,47 @@ function bindPhotoHandler() {
     statusEl.textContent = 'Sending your photo to secure storage…';
     statusEl.style.color = '#5a4a3a';
 
-    var fd = new FormData();
-    fd.append('photo', file, file.name);
-    fd.append('caption', (captionInput && captionInput.value) || '');
-
-    try {
-      var resp = await fetch(API_BASE + '/api/customer/upload-photo?token=' + encodeURIComponent(token), {
-        method: 'POST',
-        body: fd,
-      });
-      var data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || ('Upload failed (status ' + resp.status + ')'));
-      statusEl.textContent = 'Photo added! Refreshing…';
-      statusEl.style.color = '#2a5a2a';
-      setTimeout(function(){ window.location.reload(); }, 1000);
-    } catch (err) {
-      console.error('Photo upload error:', err);
-      statusEl.textContent = 'Could not add photo: ' + (err.message || 'Unknown error');
-      statusEl.style.color = '#c0392b';
-      btn.disabled = false;
-      btn.textContent = '📷 Add a photo';
-      fileInput.value = ''; // allow retry
+    // Upload with a real time limit + automatic retries, so a big iPhone photo
+    // (converted server-side, which is slow) can NEVER leave the customer stuck
+    // on a frozen "Sending…" screen. Mirrors the recording uploader.
+    var MAX_TRIES = 3;
+    var PER_TRY_MS = 60000; // photos convert HEIC→JPEG server-side; give each try up to 60s
+    for (var attempt = 1; attempt <= MAX_TRIES; attempt++) {
+      statusEl.textContent = (attempt === 1)
+        ? 'Sending your photo to secure storage… (a large phone photo can take a moment)'
+        : 'Still sending — a large photo or a waking server can take a little longer. Hang tight…';
+      statusEl.style.color = '#5a4a3a';
+      var fd = new FormData();
+      fd.append('photo', file, file.name);
+      fd.append('caption', (captionInput && captionInput.value) || '');
+      var ctrl = new AbortController();
+      var to = setTimeout(function(){ ctrl.abort(); }, PER_TRY_MS);
+      try {
+        var resp = await fetch(API_BASE + '/api/customer/upload-photo?token=' + encodeURIComponent(token), {
+          method: 'POST',
+          body: fd,
+          signal: ctrl.signal,
+        });
+        clearTimeout(to);
+        var data = await resp.json().catch(function(){ return {}; });
+        if (!resp.ok || !data.ok) throw new Error(data.error || ('Upload failed (status ' + resp.status + ')'));
+        statusEl.textContent = 'Photo added! Refreshing…';
+        statusEl.style.color = '#2a5a2a';
+        setTimeout(function(){ window.location.reload(); }, 1000);
+        return;
+      } catch (err) {
+        clearTimeout(to);
+        console.error('Photo upload attempt ' + attempt + ' failed:', err);
+        if (attempt < MAX_TRIES) {
+          await new Promise(function(res){ setTimeout(res, 2000); }); // brief pause, then retry automatically
+          continue;
+        }
+        statusEl.textContent = 'Your photo didn’t upload yet — please tap “📷 Add a photo” to try again, or email Ken if it keeps happening.';
+        statusEl.style.color = '#c0392b';
+        btn.disabled = false;
+        btn.textContent = '📷 Add a photo';
+        fileInput.value = ''; // allow retry
+      }
     }
   });
 
