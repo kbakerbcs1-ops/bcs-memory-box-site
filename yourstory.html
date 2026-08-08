@@ -101,7 +101,7 @@
 </main>
 
 <footer>
-  <p>BCS Memory Box · Ken Baker · <a href="mailto:kbakerbcs1@gmail.com">kbakerbcs1@gmail.com</a></p>
+  <p>BCS Memory Box · Ken Baker · <a href="mailto:hello@bcsmemorybox.com">hello@bcsmemorybox.com</a></p>
 </footer>
 
 <script>
@@ -267,7 +267,7 @@ async function resumeCheckout(btn) {
     if (!resp.ok || !data.ok || !data.checkoutUrl) throw new Error(data.error || 'Could not open checkout. Please try again.');
     window.location.href = data.checkoutUrl;
   } catch (err) {
-    if (statusEl) { statusEl.textContent = (err.message || 'Something went wrong') + ' — or email us at kbakerbcs1@gmail.com for help.'; statusEl.style.color = '#c0392b'; }
+    if (statusEl) { statusEl.textContent = (err.message || 'Something went wrong') + ' — or email us at hello@bcsmemorybox.com for help.'; statusEl.style.color = '#c0392b'; }
     if (btn) { btn.disabled = false; btn.textContent = 'Complete your payment →'; }
   }
 }
@@ -956,7 +956,7 @@ function renderError(msg) {
   return '<div class="card">' +
     '<h1>We couldn\'t load your story.</h1>' +
     '<div class="alert alert-error">' + escapeHtml(msg) + '</div>' +
-    '<p class="muted">If this keeps happening, email <a href="mailto:kbakerbcs1@gmail.com">kbakerbcs1@gmail.com</a> with your access link and we\'ll sort it out.</p>' +
+    '<p class="muted">If this keeps happening, email <a href="mailto:hello@bcsmemorybox.com">hello@bcsmemorybox.com</a> with your access link and we\'ll sort it out.</p>' +
   '</div>';
 }
 
@@ -1200,7 +1200,7 @@ function bindUploadHandler() {
 // help; the email link is the escalation to Ken.
 function bcsMicHelpHtml(err, hasUpload) {
   var name = (err && err.name) || '';
-  var mail = 'mailto:kbakerbcs1@gmail.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
+  var mail = 'mailto:hello@bcsmemorybox.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
   var uploadBit = hasUpload ? ' (Or scroll down and <strong>upload an audio file instead</strong>.)' : '';
   var emailBit = ' Still stuck? <a href="' + mail + '" style="color:#8b5a2b;">Email us and we’ll help you</a>.';
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {

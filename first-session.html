@@ -216,7 +216,7 @@
   // dead-end). Escalates to email — never a phone number.
   function bcsMicHelpHtml(err){
     var name = (err && err.name) || '';
-    var mail = 'mailto:kbakerbcs1@gmail.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
+    var mail = 'mailto:hello@bcsmemorybox.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
     var emailBit = ' Still stuck? <a href="' + mail + '" style="color:#8b5a2b;">Email us and we’ll help you</a> — or press Skip.';
     if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
       return 'I couldn’t find a microphone. If you’re on a computer without one, please try your phone.' + emailBit;
