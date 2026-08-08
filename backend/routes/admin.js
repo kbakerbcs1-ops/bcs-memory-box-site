@@ -496,7 +496,7 @@ async function sendEmail(to, subject, html) {
     body: JSON.stringify({
       from: 'BCS Memory Box <ops@bcsmemorybox.com>',
       to: to,
-      reply_to: 'kbakerbcs1@gmail.com',
+      reply_to: 'hello@bcsmemorybox.com',
       subject: subject,
       html: html,
     }),

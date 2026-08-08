@@ -706,7 +706,7 @@ rows.map((r) => '<tr><td style="padding:4px 14px 4px 0;color:#8b5a2b;vertical-al
     res.json({ ok: true, message: "Your book request is in! Ken will email you to confirm the details and arrange payment." });
   } catch (err) {
     console.error('[customer/order-book] error:', err);
-    res.status(500).json({ error: 'Something went wrong sending your request. Please try again, or email Ken directly at kbakerbcs1@gmail.com.' });
+    res.status(500).json({ error: 'Something went wrong sending your request. Please try again, or email Ken directly at hello@bcsmemorybox.com.' });
   }
 });
 
@@ -764,7 +764,7 @@ async function sendEmail(to, subject, html) {
         ? 'Bullet <ops@bcsmemorybox.com>'
         : 'BCS Memory Box <ops@bcsmemorybox.com>',
       to: to,
-      reply_to: 'kbakerbcs1@gmail.com',
+      reply_to: to === 'kbakerbcs1@gmail.com' ? 'kbakerbcs1@gmail.com' : 'hello@bcsmemorybox.com',
       subject: subject,
       html: html,
     }),
@@ -883,7 +883,7 @@ router.post('/undo-approval', async (req, res) => {
       } catch (e) {
         console.error('[undo-approval] Lulu cancel refused for customer ' + customer.id + ': ' + e.message);
         return res.status(409).json({
-          error: 'Your book may already be printing, so I couldn’t stop it automatically. Please email Ken right away (kbakerbcs1@gmail.com) and he’ll sort it out for you.'
+          error: 'Your book may already be printing, so I couldn’t stop it automatically. Please email Ken right away (hello@bcsmemorybox.com) and he’ll sort it out for you.'
         });
       }
       await db.query("UPDATE print_jobs SET status='canceled', last_lulu_status='CANCELED', updated_at=NOW() WHERE id=$1", [job.id]);

@@ -185,7 +185,7 @@ async function autoOrderOnApproval(customer, draft) {
       quantity: 1,
       interiorUrl,
       coverUrl,
-      contactEmail: 'kbakerbcs1@gmail.com',
+      contactEmail: 'hello@bcsmemorybox.com',
       address,
       shippingLevel: 'MAIL',
       productionDelayMinutes: 1440,

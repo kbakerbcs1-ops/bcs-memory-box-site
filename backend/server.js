@@ -282,7 +282,7 @@ paragraphs +
     body: JSON.stringify({
       from: 'BCS Memory Box <sample@bcsmemorybox.com>',
       to: toEmail,
-      reply_to: 'kbakerbcs1@gmail.com',
+      reply_to: 'hello@bcsmemorybox.com',
       subject: 'Here is your Memory Box sample',
       html,
     }),

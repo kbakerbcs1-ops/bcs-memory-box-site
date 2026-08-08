@@ -84,7 +84,7 @@ async function sendEmail(to, subject, html) {
     body: JSON.stringify({
       from: fromFor(to),
       to: to,
-      reply_to: 'kbakerbcs1@gmail.com',
+      reply_to: to === ADMIN_EMAIL ? ADMIN_EMAIL : 'hello@bcsmemorybox.com',
       subject: subject,
       html: html,
     }),

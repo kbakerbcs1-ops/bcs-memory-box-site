@@ -763,6 +763,7 @@ async function sendEmail(to, subject, html) {
         ? 'Bullet <ops@bcsmemorybox.com>'
         : 'BCS Memory Box <ops@bcsmemorybox.com>',
       to: to,
+      reply_to: to === 'kbakerbcs1@gmail.com' ? 'kbakerbcs1@gmail.com' : 'hello@bcsmemorybox.com',
       subject: subject,
       html: html,
     }),
