@@ -469,6 +469,18 @@ async function showCustomer(id) {
     }
     html += '</div>';
 
+    // Reprocess control — shown when a memoir is stuck in 'processing' or landed
+    // in 'error', so Ken can re-run the pipeline with one click (the alert emails
+    // point here). Already-transcribed recordings are skipped, so it's cheap.
+    if (c.status === 'processing' || c.status === 'error') {
+      html += '<div class="detail-card">';
+      html +=   '<h2>Reprocess memoir</h2>';
+      html +=   '<p class="muted" style="margin-bottom:12px;">This customer is <strong>' + escapeHtml(c.status.replace(/_/g,' ')) + '</strong>. Re-run the memoir pipeline (recordings already transcribed are skipped). Use this if a memoir looks stuck or failed.</p>';
+      html +=   '<button class="btn" id="reprocess-btn">Re-run this memoir</button>';
+      html +=   '<span id="reprocess-status" class="muted" style="margin-left:12px;"></span>';
+      html += '</div>';
+    }
+
     // Recordings
     html += '<div class="detail-card">';
     html +=   '<h2>Recordings (' + data.recordings.length + ')</h2>';
@@ -562,6 +574,22 @@ async function showCustomer(id) {
     document.querySelectorAll('[data-draft-id]').forEach(function(el){
       el.addEventListener('click', function(){ showDraft(el.getAttribute('data-draft-id'), id); });
     });
+
+    var reprocessBtn = document.getElementById('reprocess-btn');
+    if (reprocessBtn) {
+      reprocessBtn.addEventListener('click', async function() {
+        if (!confirm('Re-run the memoir for ' + c.name + '?\n\nRecordings already transcribed are skipped.')) return;
+        var st = document.getElementById('reprocess-status');
+        reprocessBtn.disabled = true;
+        st.textContent = 'Re-running…'; st.style.color = '#5a4a3a';
+        try {
+          await api('/api/admin/customer/' + encodeURIComponent(id) + '/reprocess', { method: 'POST' });
+          st.textContent = 'Started — it will finish or report an error shortly.'; st.style.color = '#2a5a2a';
+        } catch (e) {
+          if (e.message !== 'Unauthorized') { st.textContent = 'Failed: ' + e.message; st.style.color = '#c0392b'; reprocessBtn.disabled = false; }
+        }
+      });
+    }
 
     document.getElementById('delete-customer-btn').addEventListener('click', async function() {
       var typed = prompt('Remove ' + c.name + ' from the dashboard.\n\nTheir recordings and files are KEPT — this can be undone.\n\nTo confirm, type their email exactly:\n' + c.email);

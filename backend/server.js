@@ -18,7 +18,7 @@ const voiceRoutes    = require('./routes/voice');
 const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
-const { checkStuckCustomers, recoverStuckOnBoot } = require('./lib/cleanup');
+const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot } = require('./lib/cleanup');
 const mailer = require('./lib/mailer');
 const pricing = require('./lib/pricing');
 
@@ -320,6 +320,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   // Recover work orphaned by this restart: any voice-revision left mid-apply is
   // reset so the customer can retry (and Ken is told). Never blocks startup.
   await recoverStuckOnBoot().catch((e) => console.error('[startup] boot recovery failed:', e.message));
+  // Re-run any memoir left mid-pipeline (status='processing') by this restart so a
+  // paying customer is never frozen forever. Fire-and-forget so boot isn't blocked.
+  resumeStuckProcessingOnBoot().catch((e) => console.error('[startup] resume-processing failed:', e.message));
 
   app.listen(PORT, () => {
     console.log('BCS Memory Box portal server listening on port ' + PORT);

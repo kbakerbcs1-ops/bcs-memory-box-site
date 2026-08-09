@@ -868,6 +868,56 @@ async function recoverStuckOnBoot() {
 }
 
 // ----------------------------------------------------------------------------
+// Boot recovery for the MAIN pipeline. A customer left in status='processing'
+// when the process died (deploy/crash) is orphaned — the async pipeline that was
+// preparing their memoir is gone, and every re-entry point (finish-recording,
+// finish-follow-ups, reopen) blocks while 'processing', so they'd be frozen
+// forever. On boot we re-run the pipeline for each: already-transcribed
+// recordings are skipped (cheap), so it simply finishes the memoir. A
+// genuinely-failing one is flipped to 'error' by the pipeline's own handling
+// (so this can't loop across restarts), and Ken is told either way.
+// ----------------------------------------------------------------------------
+async function resumeStuckProcessingOnBoot() {
+  if (!db.enabled) return;
+  let rows = [];
+  try {
+    const result = await db.query("SELECT id, name, email FROM customers WHERE status = 'processing'");
+    rows = result.rows || [];
+  } catch (err) {
+    console.error('[boot-recovery] could not query stuck-processing customers: ' + err.message);
+    return;
+  }
+  if (rows.length === 0) return;
+  console.warn('[boot-recovery] resuming ' + rows.length + ' memoir(s) stranded in processing by the restart');
+  // Fire each async so boot isn't blocked; the pipeline manages its own status.
+  for (const c of rows) {
+    runCleanupPipeline(c.id).catch(function (e) {
+      console.error('[boot-recovery] resume failed for ' + c.id + ': ' + (e && e.message));
+    });
+  }
+  try {
+    await emailAdminResumed(rows);
+  } catch (e) {
+    console.error('[boot-recovery] could not email Ken about resumed memoirs: ' + e.message);
+  }
+}
+
+async function emailAdminResumed(rows) {
+  const subject = 'Memory Box: auto-resumed ' + rows.length + ' memoir' + (rows.length === 1 ? '' : 's') + ' after a restart';
+  const list = rows.map(function (r) {
+    return '<li>' + escapeHtml((r.name || 'a customer') + (r.email ? ' (' + r.email + ')' : '')) + '</li>';
+  }).join('');
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">A restart interrupted some memoirs — now re-running</h2>' +
+'<p>The server restarted while ' + rows.length + ' memoir' + (rows.length === 1 ? ' was' : 's were') + ' being prepared, so ' + (rows.length === 1 ? 'it was' : 'they were') + ' automatically re-run (already-transcribed recordings are skipped):</p>' +
+'<ul>' + list + '</ul>' +
+'<p style="color:#7a726a;font-size:13px;">No action needed — they will finish on their own. If one genuinely can’t finish, you’ll get a separate “error” alert for it.</p>' +
+'</div>';
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
+// ----------------------------------------------------------------------------
 // Follow-up questions: read the transcripts + the first draft, and propose a
 // few gentle spoken-style questions that would draw out richer detail. Strictly
 // about things they already mentioned; never new topics or genealogy.
@@ -1089,6 +1139,7 @@ module.exports = {
   emailAdminDraftReady,
   checkStuckCustomers,
   recoverStuckOnBoot,
+  resumeStuckProcessingOnBoot,
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data

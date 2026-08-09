@@ -7,6 +7,7 @@ const db = require('../lib/db');
 const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
 const lulu = require('../lib/lulu');
+const cleanup = require('../lib/cleanup');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 
@@ -234,6 +235,31 @@ router.delete('/customer/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[admin/customer/delete] error:', err);
     res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/customer/:id/reprocess
+// Re-run the memoir pipeline for a customer — recovers one stuck in 'processing'
+// or retries one in 'error'. Recordings already transcribed are skipped, so it's
+// cheap. This is what the "retry from the dashboard" alert emails point to.
+// ---------------------------------------------------------------------------
+router.post('/customer/:id/reprocess', requireAdmin, async (req, res) => {
+  try {
+    const customer = await db.queryOne(
+      'SELECT id, name, status FROM customers WHERE id = $1 AND deleted_at IS NULL',
+      [req.params.id]
+    );
+    if (!customer) return res.status(404).json({ error: 'Customer not found.' });
+    // Fire async — the pipeline sets status='processing' and handles its own errors.
+    cleanup.runCleanupPipeline(customer.id).catch(function (e) {
+      console.error('[admin/reprocess] pipeline failed for ' + customer.id + ': ' + (e && e.message));
+    });
+    console.log('[admin/reprocess] re-running memoir for ' + customer.id + ' (' + (customer.name || '') + ')');
+    res.json({ ok: true, reprocessing: true, message: 'Re-running the memoir now — it will finish or report an error shortly.' });
+  } catch (err) {
+    console.error('[admin/customer/reprocess] error:', err);
+    res.status(500).json({ error: 'Something went wrong starting the re-run.' });
   }
 });
 
