@@ -344,11 +344,11 @@ async function transcribeFromR2(storageKey, opts) {
   const audioBuffer = await storage.getObjectBuffer(storageKey);
 
   // 1. Upload bytes to AssemblyAI
-  const upResp = await fetch('https://api.assemblyai.com/v2/upload', {
+  const upResp = await fetchWithRetry('https://api.assemblyai.com/v2/upload', {
     method: 'POST',
     headers: { 'Authorization': process.env.ASSEMBLYAI_API_KEY },
     body: audioBuffer,
-  });
+  }, 'AAI upload');
   if (!upResp.ok) throw new Error('AAI upload failed: ' + await upResp.text());
   const { upload_url } = await upResp.json();
 
@@ -363,14 +363,14 @@ async function transcribeFromR2(storageKey, opts) {
     submitBody.speaker_labels = true;
     if (opts.speakersExpected) submitBody.speakers_expected = opts.speakersExpected;
   }
-  const subResp = await fetch('https://api.assemblyai.com/v2/transcript', {
+  const subResp = await fetchWithRetry('https://api.assemblyai.com/v2/transcript', {
     method: 'POST',
     headers: {
       'Authorization': process.env.ASSEMBLYAI_API_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(submitBody),
-  });
+  }, 'AAI submit');
   if (!subResp.ok) throw new Error('AAI submit failed: ' + await subResp.text());
   const { id: tid } = await subResp.json();
 
@@ -378,10 +378,13 @@ async function transcribeFromR2(storageKey, opts) {
   // We poll for up to 10 minutes.
   for (let i = 0; i < 150; i++) {
     await sleep(4000);
-    const stResp = await fetch('https://api.assemblyai.com/v2/transcript/' + tid, {
+    const stResp = await fetchWithRetry('https://api.assemblyai.com/v2/transcript/' + tid, {
       headers: { 'Authorization': process.env.ASSEMBLYAI_API_KEY },
-    });
-    const data = await stResp.json();
+    }, 'AAI poll');
+    // A transient bad response during polling shouldn't kill the whole build —
+    // just skip this tick and check again in 4s (we poll for up to 10 minutes).
+    let data;
+    try { data = await stResp.json(); } catch (e) { continue; }
     if (data.status === 'completed') {
       // When diarization is on, return a speaker-labeled transcript so the
       // couple writer can attribute lines. Fall back to plain text otherwise.
@@ -426,7 +429,7 @@ async function polishWithClaude(customerName, combinedTranscripts, photos, answe
     "Here are the transcripts of their recordings. Organize and polish them into the memoir per the rules above:\n\n" +
     combinedTranscripts + qaBlock + photoBlock;
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': process.env.ANTHROPIC_API_KEY,
@@ -476,7 +479,7 @@ async function polishCoupleWithClaude(name1, name2, combinedTranscripts, photos,
     "Here is the transcript of their recordings, each line labeled with the speaker the system heard. Figure out which of them is " + (name1 || 'the first') + " and which is " + (name2 || 'the second') + " from context, then organize and polish everything into their joint memoir per the rules above:\n\n" +
     combinedTranscripts + qaBlock + photoBlock;
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': process.env.ANTHROPIC_API_KEY,
@@ -779,6 +782,33 @@ function escapeHtml(s) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Resilient fetch for the outside services the memoir pipeline depends on
+// (AssemblyAI transcription, Anthropic writing). A single transient blip — a
+// 429 "too busy" or a 5xx/network hiccup — used to abort a customer's ENTIRE
+// book build (audit H4). This retries up to 3 times with a short backoff
+// (1s, then 2s) on exactly those transient conditions, then returns the final
+// response so the caller's existing `if (!resp.ok) throw` still handles a real,
+// persistent failure. A definite answer (2xx, or a 4xx like "bad request")
+// returns immediately — we only retry things that are plausibly temporary.
+// The request bodies here are buffers/JSON strings (safe to resend).
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+async function fetchWithRetry(url, options, label) {
+  const MAX = 3;
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    try {
+      const resp = await fetch(url, options);
+      if (resp.ok || !RETRYABLE_STATUS.has(resp.status) || attempt === MAX) return resp;
+      console.warn('[retry] ' + (label || url) + ' got HTTP ' + resp.status
+        + ' (attempt ' + attempt + '/' + MAX + ') — retrying…');
+    } catch (e) {
+      if (attempt === MAX) throw e;
+      console.warn('[retry] ' + (label || url) + ' network error: ' + e.message
+        + ' (attempt ' + attempt + '/' + MAX + ') — retrying…');
+    }
+    await sleep(1000 * Math.pow(2, attempt - 1)); // 1s, then 2s
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Safety net ("reaper"): detect customers stuck in 'processing' — a pipeline
 // that died silently (e.g. the server restarted mid-run) — and email Ken so no
@@ -982,7 +1012,7 @@ async function generateFollowUpQuestions(combinedTranscripts, draftMarkdown) {
   const userMsg =
     "Here is everything the storyteller recorded:\n\n" + combinedTranscripts +
     "\n\n----\n\nHere is the draft memoir we wrote from it:\n\n" + draftMarkdown;
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': process.env.ANTHROPIC_API_KEY,
@@ -1048,7 +1078,7 @@ async function applyRevision(currentMarkdown, instruction, customerName) {
     "=== THEIR SPOKEN INSTRUCTION (what they want changed) ===\n" + instruction + "\n\n" +
     "=== THEIR CURRENT MEMOIR (Markdown) ===\n" + (currentMarkdown || '');
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': process.env.ANTHROPIC_API_KEY,
