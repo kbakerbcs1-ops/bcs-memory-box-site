@@ -94,6 +94,14 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
         access_token: customer.access_token,
         plan: planKey,
       },
+    }, {
+      // Audit H6: a stable idempotency key so a senior who opens checkout in two
+      // tabs, or retries a slow first attempt, gets the SAME checkout session
+      // back instead of a second, separately-chargeable one. Stripe caches the
+      // response per key (~24h) and keyed on the customer + plan, so repeat calls
+      // return one session that can only be paid once. (Webhook still has a
+      // belt-and-suspenders alert if a second distinct charge somehow lands.)
+      idempotencyKey: 'checkout_' + customer.access_token + '_' + planKey,
     });
 
     res.json({ ok: true, checkoutUrl: session.url });
@@ -175,7 +183,7 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
       }
 
       const customer = await db.queryOne(
-        'SELECT id, status, paid_at, email, name, access_token FROM customers WHERE access_token = $1',
+        'SELECT id, status, paid_at, email, name, access_token, stripe_payment_intent_id FROM customers WHERE access_token = $1',
         [accessToken]
       );
       if (!customer) {
@@ -185,7 +193,35 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
       }
 
       if (customer.paid_at) {
-        console.log('[stripe/webhook] customer ' + customer.id + ' already paid; ignoring duplicate event');
+        // Audit H6 (belt-and-suspenders): the idempotency key on checkout should
+        // stop a second charge from ever being created. But if a genuinely
+        // DIFFERENT payment somehow lands for an already-paid customer (a
+        // distinct payment_intent, not just Stripe re-delivering the same
+        // event), that's a real double-charge — alert Ken to refund it. A
+        // matching/absent payment_intent is just a duplicate event: ignore it.
+        if (paymentIntentId && customer.stripe_payment_intent_id
+            && paymentIntentId !== customer.stripe_payment_intent_id) {
+          console.error('[stripe/webhook] POSSIBLE DOUBLE CHARGE for customer ' + customer.id
+            + ' (first PI ' + customer.stripe_payment_intent_id + ', second PI ' + paymentIntentId + ')');
+          try {
+            await mailer.sendEmail(mailer.ADMIN_EMAIL,
+              '⚠️ Possible DOUBLE CHARGE — a customer may need a refund',
+              '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+              '<h2 style="color:#c0392b;">A customer may have been charged twice</h2>' +
+              '<p><strong>' + mailer.escapeHtml(customer.name || customer.email) + '</strong> (' + mailer.escapeHtml(customer.email) + ') ' +
+              'was already paid, but a second, different payment just came through. This looks like an accidental double charge.</p>' +
+              '<p style="font-size:14px;color:#5a534c;">First payment: ' + mailer.escapeHtml(customer.stripe_payment_intent_id) + '<br>' +
+              'Second payment: ' + mailer.escapeHtml(paymentIntentId) + '</p>' +
+              '<p>Please open Stripe and <strong>refund the second payment</strong> (' + mailer.escapeHtml(paymentIntentId) + '). ' +
+              'Their book and account are unaffected — this is only about returning the extra charge.</p>' +
+              '</div>');
+            console.log('[stripe/webhook] alerted Ken about possible double charge for ' + customer.email);
+          } catch (dupErr) {
+            console.error('[stripe/webhook] could not alert Ken about double charge:', dupErr.message);
+          }
+        } else {
+          console.log('[stripe/webhook] customer ' + customer.id + ' already paid; ignoring duplicate event');
+        }
         return res.status(200).send('Already paid (idempotent)');
       }
 
