@@ -19,6 +19,7 @@ const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat } = require('./lib/cleanup');
+const reminders = require('./lib/reminders');
 const mailer = require('./lib/mailer');
 const pricing = require('./lib/pricing');
 
@@ -389,6 +390,27 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     // itself the signal. Ken can also trigger one on demand from the dashboard.
     setInterval(function () {
       sendHeartbeat().catch(function (e) { console.error('[heartbeat] tick failed:', e.message); });
+    }, 24 * 60 * 60 * 1000);
+
+    // Daily customer re-engagement sweep (audit C5): gently nudge paying
+    // customers who have gone quiet mid-journey so they never silently stall.
+    // dryRun mirrors REMINDERS_ENABLED — until Ken sets it to 'true', this only
+    // computes/logs who WOULD be nudged and sends nothing to customers.
+    // Boot catch-up: if a restart reset the daily timer, run once shortly after
+    // boot as long as no REAL sweep has happened in the last ~20h.
+    const remindersDry = function () { return process.env.REMINDERS_ENABLED !== 'true'; };
+    setTimeout(function () {
+      reminders.lastRealSweepAgeHours().then(function (hrs) {
+        if (hrs != null && hrs <= 20) return; // already swept for real today
+        return reminders.runReminderSweep({ dryRun: remindersDry() }).then(function (rep) {
+          console.log('[reminders] boot sweep: ' + (rep.dryRun ? 'DRY-RUN, ' : '') + rep.due.length + ' due, ' + rep.sent + ' sent');
+        });
+      }).catch(function (e) { console.error('[reminders] boot sweep failed:', e.message); });
+    }, 90 * 1000);
+    setInterval(function () {
+      reminders.runReminderSweep({ dryRun: remindersDry() }).then(function (rep) {
+        console.log('[reminders] daily sweep: ' + (rep.dryRun ? 'DRY-RUN, ' : '') + rep.due.length + ' due, ' + rep.sent + ' sent');
+      }).catch(function (e) { console.error('[reminders] daily tick failed:', e.message); });
     }, 24 * 60 * 60 * 1000);
   });
 })();

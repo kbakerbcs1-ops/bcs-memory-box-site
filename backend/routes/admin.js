@@ -8,6 +8,7 @@ const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
 const lulu = require('../lib/lulu');
 const cleanup = require('../lib/cleanup');
+const reminders = require('../lib/reminders');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 
@@ -276,6 +277,36 @@ router.post('/test-alert', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[admin/test-alert] error:', err);
     res.status(500).json({ error: 'Could not send the test alert: ' + (err && err.message) });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Customer re-engagement reminders (audit C5).
+// POST /api/admin/reminders/preview  → dry run: who WOULD be nudged right now
+//                                      (sends nothing). Powers the dashboard's
+//                                      "Preview reminders" button.
+// POST /api/admin/reminders/run      → run a sweep now. Only actually emails
+//                                      customers when REMINDERS_ENABLED=true;
+//                                      otherwise it behaves like preview.
+// ---------------------------------------------------------------------------
+router.post('/reminders/preview', requireAdmin, async (req, res) => {
+  try {
+    const rep = await reminders.runReminderSweep({ dryRun: true });
+    res.json({ ok: true, enabled: process.env.REMINDERS_ENABLED === 'true', ...rep });
+  } catch (err) {
+    console.error('[admin/reminders/preview] error:', err);
+    res.status(500).json({ error: 'Could not preview reminders: ' + (err && err.message) });
+  }
+});
+
+router.post('/reminders/run', requireAdmin, async (req, res) => {
+  try {
+    const enabled = process.env.REMINDERS_ENABLED === 'true';
+    const rep = await reminders.runReminderSweep({ dryRun: !enabled });
+    res.json({ ok: true, enabled, ...rep });
+  } catch (err) {
+    console.error('[admin/reminders/run] error:', err);
+    res.status(500).json({ error: 'Could not run reminders: ' + (err && err.message) });
   }
 });
 

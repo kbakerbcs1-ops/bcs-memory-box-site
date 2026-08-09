@@ -299,8 +299,9 @@ async function showDashboard() {
     var html =
       '<div class="toolbar">' +
         '<h1>Customers</h1>' +
-        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-print-orders">📦 Print Orders</button> <button class="btn" id="test-alert-btn">🔔 Test alerts</button> <span id="test-alert-status" class="muted" style="font-size:13px;margin-left:6px;"></span></div>' +
+        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-print-orders">📦 Print Orders</button> <button class="btn" id="test-alert-btn">🔔 Test alerts</button> <button class="btn" id="preview-reminders-btn">✉️ Preview reminders</button> <span id="test-alert-status" class="muted" style="font-size:13px;margin-left:6px;"></span></div>' +
       '</div>' +
+      '<div id="reminders-box"></div>' +
       '<div style="border:1px solid #e0d8c8;border-radius:10px;padding:18px 20px;margin:0 0 22px;background:#faf7f0;">' +
         '<h2 style="margin:0 0 4px;font-size:18px;">Add a free tester</h2>' +
         '<p style="margin:0 0 12px;color:#6b5f48;font-size:14px;">Creates a free account (no payment, ready to record) and emails them their story link. For beta testers or gifts.</p>' +
@@ -347,6 +348,40 @@ async function showDashboard() {
         if (e.message !== 'Unauthorized') { st.textContent = 'Failed: ' + e.message; st.style.color = '#c0392b'; }
       }
       testAlertBtn.disabled = false;
+    });
+    var prevBtn = document.getElementById('preview-reminders-btn');
+    if (prevBtn) prevBtn.addEventListener('click', async function(){
+      var box = document.getElementById('reminders-box');
+      prevBtn.disabled = true;
+      box.innerHTML = '<p class="muted" style="margin:6px 0 16px;">Checking who would be nudged…</p>';
+      try {
+        var r = await api('/api/admin/reminders/preview', { method: 'POST' });
+        var due = r.due || [];
+        var armed = r.enabled
+          ? '<span style="color:#2a5a2a;font-weight:bold;">ON</span> — real reminder emails are being sent automatically.'
+          : '<span style="color:#8a6d1a;font-weight:bold;">OFF (preview only)</span> — no emails are being sent yet. Set <code>REMINDERS_ENABLED=true</code> in Render to turn them on.';
+        var h = '<div style="border:1px solid #e0d8c8;border-radius:10px;padding:16px 20px;margin:0 0 22px;background:#faf7f0;">' +
+          '<h2 style="margin:0 0 4px;font-size:18px;">Reminder sweep — preview</h2>' +
+          '<p style="margin:0 0 12px;color:#6b5f48;font-size:14px;">Automatic reminders are ' + armed + '</p>';
+        if (!due.length) {
+          h += '<p style="margin:0;">Nobody is due for a nudge right now. 🎉</p>';
+        } else {
+          h += '<p style="margin:0 0 8px;">These <strong>' + due.length + '</strong> would get a gentle nudge on the next sweep:</p>' +
+            '<table><thead><tr><th>Name</th><th>Email</th><th>Where they\'re stuck</th><th>Quiet for</th><th>Nudge #</th></tr></thead><tbody>';
+          due.forEach(function(d){
+            var who = d.audience === 'ken' ? ' <span class="muted">(alerts you)</span>' : '';
+            h += '<tr><td><strong>' + escapeHtml(d.name || '') + '</strong></td><td>' + escapeHtml(d.email || '') + '</td>' +
+              '<td>' + escapeHtml(String(d.kind).replace(/_/g,' ')) + who + '</td>' +
+              '<td class="muted">' + d.ageDays + ' days</td><td>' + d.nudgeNumber + ' of 2</td></tr>';
+          });
+          h += '</tbody></table>';
+        }
+        h += '</div>';
+        box.innerHTML = h;
+      } catch (e) {
+        if (e.message !== 'Unauthorized') box.innerHTML = '<p style="color:#c0392b;">Could not load preview: ' + escapeHtml(e.message) + '</p>';
+      }
+      prevBtn.disabled = false;
     });
     var compBtn = document.getElementById('comp-add-btn');
     if (compBtn) {
