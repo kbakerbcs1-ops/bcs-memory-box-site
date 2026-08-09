@@ -108,6 +108,30 @@ checkoutRouter.post('/create-checkout-session', async (req, res) => {
 // ----------------------------------------------------------------------------
 const webhookRouter = express.Router();
 
+// Audit H3: a broken/rotated STRIPE_WEBHOOK_SECRET makes EVERY real payment
+// event fail verification — the customer pays but is stuck at 'awaiting_payment'
+// and (before this) Ken was never told. Alert Ken out-of-band when that happens.
+// Throttled to at most once per 30 min so it can't spam, and always best-effort
+// (a mail failure here must never affect the webhook response). We only alert
+// when a Stripe-signature header is actually present, so random internet probes
+// hitting the endpoint don't trigger false alarms.
+let lastWebhookAlertAt = 0;
+function alertKenWebhookFailure(reason) {
+  const now = Date.now();
+  if (now - lastWebhookAlertAt < 30 * 60 * 1000) return;
+  lastWebhookAlertAt = now;
+  mailer.sendEmail(mailer.ADMIN_EMAIL,
+    '⚠️ Stripe webhook is failing — payments may not be recorded',
+    '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+    '<h2 style="color:#c0392b;">Stripe payments may not be going through</h2>' +
+    '<p>The Stripe payment webhook just failed:</p>' +
+    '<p><strong>' + mailer.escapeHtml(reason) + '</strong></p>' +
+    '<p>While this is happening, a customer can pay but be left stuck at &ldquo;awaiting payment&rdquo; with no way in. ' +
+    'This almost always means the <code>STRIPE_WEBHOOK_SECRET</code> needs attention in Render — nothing you did caused it. ' +
+    'Anyone who paid during the outage can be fixed from the dashboard once it&rsquo;s sorted.</p>' +
+    '</div>').catch(function (e) { console.error('[stripe/webhook] could not alert Ken:', e.message); });
+}
+
 // POST /api/stripe/webhook
 // Receives Stripe events. We care about 'checkout.session.completed':
 //   - Look up the customer by client_reference_id (= access_token)
@@ -121,6 +145,7 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
   }
   if (!webhookSecret) {
     console.error('[stripe/webhook] STRIPE_WEBHOOK_SECRET not configured');
+    if (req.headers['stripe-signature']) alertKenWebhookFailure('STRIPE_WEBHOOK_SECRET is not set on the server');
     return res.status(500).send('Webhook secret not configured');
   }
 
@@ -130,6 +155,10 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
     event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
     console.error('[stripe/webhook] signature verification failed:', err.message);
+    // A real Stripe call carries a stripe-signature header; if that fails to
+    // verify, the secret is likely wrong/rotated and real payments are being
+    // dropped — alert Ken. Unsigned probes are ignored (no false alarms).
+    if (req.headers['stripe-signature']) alertKenWebhookFailure('signature verification failed (' + err.message + ')');
     return res.status(400).send('Webhook signature verification failed: ' + err.message);
   }
 
@@ -179,6 +208,25 @@ webhookRouter.post('/', express.raw({ type: 'application/json' }), async (req, r
         console.log('[stripe/webhook] welcome email sent to ' + customer.email);
       } catch (mailErr) {
         console.error('[stripe/webhook] welcome email failed (non-fatal):', mailErr.message);
+        // A paid customer with no link is stranded and (before this) it was
+        // silent. Tell Ken so he can resend it in one click. Best-effort; a
+        // failure here must never fail the webhook (Stripe would keep retrying).
+        try {
+          await mailer.sendEmail(mailer.ADMIN_EMAIL,
+            '⚠️ A paid customer did NOT get their welcome email — please resend',
+            '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+            '<h2 style="color:#c0392b;">A paid customer needs their link resent</h2>' +
+            '<p><strong>' + mailer.escapeHtml(customer.name || customer.email) + '</strong> (' + mailer.escapeHtml(customer.email) + ') ' +
+            'just paid, but the welcome email carrying their story link failed to send:</p>' +
+            '<p><strong>' + mailer.escapeHtml(mailErr.message) + '</strong></p>' +
+            '<p>They have paid and cannot get in until they receive their link. Please open the dashboard, find them, ' +
+            'and click <strong>&ldquo;Email link&rdquo;</strong> to resend it.</p>' +
+            '<p><a href="' + FRONTEND_BASE + '/admin.html" style="background:#8b5a2b;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Open admin dashboard</a></p>' +
+            '</div>');
+          console.log('[stripe/webhook] alerted Ken about failed welcome email for ' + customer.email);
+        } catch (adminErr) {
+          console.error('[stripe/webhook] could not alert Ken about failed welcome email:', adminErr.message);
+        }
       }
 
       // Notify Ken that a new customer just paid. Non-fatal: a mail failure here
