@@ -18,7 +18,7 @@ const voiceRoutes    = require('./routes/voice');
 const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
-const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot } = require('./lib/cleanup');
+const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat } = require('./lib/cleanup');
 const mailer = require('./lib/mailer');
 const pricing = require('./lib/pricing');
 
@@ -383,5 +383,12 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     setInterval(function () {
       checkStuckCustomers().catch(function (e) { console.error('[reaper] tick failed:', e.message); });
     }, 10 * 60 * 1000);
+
+    // Daily heartbeat / dead-man's-switch: a "still alive + quick status" email so
+    // that if the alert channel (or the whole service) ever breaks, its ABSENCE is
+    // itself the signal. Ken can also trigger one on demand from the dashboard.
+    setInterval(function () {
+      sendHeartbeat().catch(function (e) { console.error('[heartbeat] tick failed:', e.message); });
+    }, 24 * 60 * 60 * 1000);
   });
 })();

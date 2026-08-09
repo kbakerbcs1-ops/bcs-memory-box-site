@@ -299,7 +299,7 @@ async function showDashboard() {
     var html =
       '<div class="toolbar">' +
         '<h1>Customers</h1>' +
-        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-print-orders">📦 Print Orders</button></div>' +
+        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-print-orders">📦 Print Orders</button> <button class="btn" id="test-alert-btn">🔔 Test alerts</button> <span id="test-alert-status" class="muted" style="font-size:13px;margin-left:6px;"></span></div>' +
       '</div>' +
       '<div style="border:1px solid #e0d8c8;border-radius:10px;padding:18px 20px;margin:0 0 22px;background:#faf7f0;">' +
         '<h2 style="margin:0 0 4px;font-size:18px;">Add a free tester</h2>' +
@@ -335,6 +335,19 @@ async function showDashboard() {
     document.getElementById('main').innerHTML = html;
     var poBtn = document.getElementById('view-print-orders');
     if (poBtn) poBtn.addEventListener('click', showPrintOrders);
+    var testAlertBtn = document.getElementById('test-alert-btn');
+    if (testAlertBtn) testAlertBtn.addEventListener('click', async function(){
+      var st = document.getElementById('test-alert-status');
+      testAlertBtn.disabled = true;
+      st.textContent = 'Sending…'; st.style.color = '#5a4a3a';
+      try {
+        await api('/api/admin/test-alert', { method: 'POST' });
+        st.textContent = '✓ Sent — check your email.'; st.style.color = '#2a5a2a';
+      } catch (e) {
+        if (e.message !== 'Unauthorized') { st.textContent = 'Failed: ' + e.message; st.style.color = '#c0392b'; }
+      }
+      testAlertBtn.disabled = false;
+    });
     var compBtn = document.getElementById('comp-add-btn');
     if (compBtn) {
       compBtn.addEventListener('click', async function(){

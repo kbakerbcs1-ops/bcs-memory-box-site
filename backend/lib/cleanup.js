@@ -918,6 +918,55 @@ async function emailAdminResumed(rows) {
 }
 
 // ----------------------------------------------------------------------------
+// Heartbeat / dead-man's-switch. Sends Ken a short "still alive + quick status"
+// email on a daily timer (and on demand via the admin "Test alerts" button). Its
+// real purpose: EVERY alert in this system rides on one email provider (Resend),
+// so if that channel — or the whole service — ever breaks, all alerts go silent
+// and Ken (who isn't watching dashboards) is blind. A regular heartbeat flips
+// that around: as long as it keeps arriving, the pipe is healthy; if it STOPS
+// arriving, the silence itself is the warning. Doubles as a daily nudge to clear
+// any drafts waiting for review. reason='manual test' => a one-off confirmation.
+// ----------------------------------------------------------------------------
+async function sendHeartbeat(reason) {
+  if (!db.enabled) return;
+  let s = { total: 0, draftReady: 0, processing: 0, error: 0 };
+  try {
+    const r = await db.query(
+      "SELECT " +
+      "COUNT(*) FILTER (WHERE deleted_at IS NULL) AS total, " +
+      "COUNT(*) FILTER (WHERE status = 'draft_ready' AND deleted_at IS NULL) AS draft_ready, " +
+      "COUNT(*) FILTER (WHERE status = 'processing' AND deleted_at IS NULL) AS processing, " +
+      "COUNT(*) FILTER (WHERE status = 'error' AND deleted_at IS NULL) AS error " +
+      "FROM customers"
+    );
+    const row = (r.rows && r.rows[0]) || {};
+    s = { total: +row.total || 0, draftReady: +row.draft_ready || 0, processing: +row.processing || 0, error: +row.error || 0 };
+  } catch (e) {
+    console.error('[heartbeat] could not gather stats: ' + e.message);
+  }
+  const isTest = (reason === 'manual test');
+  const flagged = (s.error > 0 || s.processing > 0);
+  const subject = isTest
+    ? 'Memory Box: test alert — your notifications are working ✅'
+    : 'Memory Box daily check — all healthy ✅';
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">BCS Memory Box — ' + (isTest ? 'test alert' : 'daily check') + '</h2>' +
+(isTest
+  ? '<p>You asked to test your alerts — and here it is. If this reached your inbox, your notification email is working. 👍</p>'
+  : '<p>Everything is running. You get this so that if it ever <em>stops</em> arriving, you know something needs a look.</p>') +
+'<ul>' +
+'<li><strong>' + s.total + '</strong> customers</li>' +
+'<li><strong>' + s.draftReady + '</strong> draft' + (s.draftReady === 1 ? '' : 's') + ' waiting for your review</li>' +
+(s.processing ? '<li style="color:#c0392b;"><strong>' + s.processing + '</strong> currently processing</li>' : '') +
+(s.error ? '<li style="color:#c0392b;"><strong>' + s.error + '</strong> in an error state — worth a look</li>' : '') +
+'</ul>' +
+(flagged ? '<p><a href="https://www.bcsmemorybox.com/admin.html" style="color:#8b5a2b;">Open the admin dashboard →</a></p>' : '') +
+'</div>';
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
+// ----------------------------------------------------------------------------
 // Follow-up questions: read the transcripts + the first draft, and propose a
 // few gentle spoken-style questions that would draw out richer detail. Strictly
 // about things they already mentioned; never new topics or genealogy.
@@ -1140,6 +1189,7 @@ module.exports = {
   checkStuckCustomers,
   recoverStuckOnBoot,
   resumeStuckProcessingOnBoot,
+  sendHeartbeat,
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data

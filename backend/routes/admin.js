@@ -264,6 +264,22 @@ router.post('/customer/:id/reprocess', requireAdmin, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/admin/test-alert
+// Send Ken a one-off heartbeat email so he can confirm his notifications work
+// end-to-end (the same channel every alert uses). The "Test alerts" button on
+// the dashboard calls this.
+// ---------------------------------------------------------------------------
+router.post('/test-alert', requireAdmin, async (req, res) => {
+  try {
+    await cleanup.sendHeartbeat('manual test');
+    res.json({ ok: true, message: 'Test alert sent — check your inbox (kbakerbcs1@gmail.com).' });
+  } catch (err) {
+    console.error('[admin/test-alert] error:', err);
+    res.status(500).json({ error: 'Could not send the test alert: ' + (err && err.message) });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/admin/recording/:id/url
 // Returns a temporary download URL for a recording (so Ken can listen to it)
 // V1: just stream it through the server. Later we can presign R2 URLs.
