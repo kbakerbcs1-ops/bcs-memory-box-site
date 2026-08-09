@@ -47,30 +47,33 @@ router.post('/signup', async (req, res) => {
     // existing access_token (so they can retry checkout instead of getting blocked).
     // If they've already paid, send them back to their existing portal URL.
     const existing = await db.queryOne(
-      'SELECT id, access_token, status, paid_at FROM customers WHERE email = $1',
+      'SELECT id, name, access_token, status, paid_at FROM customers WHERE email = $1',
       [email]
     );
 
     if (existing) {
-      if (existing.paid_at) {
-        // Already a paying customer — just send them their portal URL again.
-        return res.json({
-          ok: true,
-          alreadyExists: true,
-          alreadyPaid: true,
-          accessToken: existing.access_token,
-          portalUrl: '/yourstory.html?token=' + encodeURIComponent(existing.access_token),
-          message: 'Welcome back. You already have an account — heading you to your story.',
-        });
+      // SECURITY: never return an existing account's access token to an
+      // unauthenticated caller keyed only on email — that token IS the login, so
+      // returning it here would let anyone who knows a customer's email take over
+      // their account. Instead, email the link to the address on file (the same
+      // safe pattern as /request-link) and tell them to check their inbox.
+      // Brand-new sign-ups (below) still go straight to checkout.
+      if (!existing.paid_at) {
+        // Has an account but hasn't paid: keep their chosen plan current so the
+        // emailed link resumes checkout at the right price.
+        await db.query('UPDATE customers SET plan = $1 WHERE id = $2', [plan, existing.id]).catch(function(){});
       }
-      // Has account but hasn't paid yet — update their chosen plan and resume checkout.
-      await db.query('UPDATE customers SET plan = $1 WHERE id = $2', [plan, existing.id]).catch(function(){});
+      try {
+        await mailer.sendStoryLink(email, existing.name, existing.access_token, false);
+        console.log('[customer/signup] existing account — link re-sent to ' + email);
+      } catch (mailErr) {
+        console.error('[customer/signup] resend link failed: ' + mailErr.message);
+      }
       return res.json({
         ok: true,
         alreadyExists: true,
-        alreadyPaid: false,
-        accessToken: existing.access_token,
-        message: 'Welcome back — taking you to checkout.',
+        emailed: true,
+        message: "You already have an account — we've just emailed your link to " + email + ". Please check your inbox (and your spam folder).",
       });
     }
 
@@ -812,6 +815,12 @@ router.post('/finish-follow-ups', async (req, res) => {
     if (customer.status === 'processing') {
       return res.json({ ok: true, alreadyProcessing: true, message: 'Your book is already being finished.' });
     }
+    // Mark the follow-up round done BEFORE re-running so the pipeline FINALIZES the
+    // book (weaving in any answers already given) instead of regenerating a fresh
+    // batch of questions and looping the customer back into follow_up. (Answered
+    // Q&A is rebuilt from the DB every run, so answers are still woven in.) Mirrors
+    // the skip-follow-ups and reopen-recording paths, which set this for the same reason.
+    await db.query("UPDATE customers SET follow_up_done = TRUE WHERE id = $1", [customer.id]);
     runCleanupPipeline(customer.id).catch(function (err) { console.error('[finish-follow-ups] pipeline crashed:', err); });
     res.json({ ok: true, message: "Thank you! We're weaving your answers in now — we'll email you when your book is ready." });
   } catch (err) {

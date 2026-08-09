@@ -81,6 +81,10 @@ const linkLimiter = makeRateLimiter({
   windowMs: 60 * 60 * 1000, max: 12,
   message: 'Too many requests right now. Please wait a few minutes and try again.',
 });
+const signupLimiter = makeRateLimiter({
+  windowMs: 60 * 60 * 1000, max: 10,
+  message: 'Too many sign-up attempts right now. Please wait a few minutes and try again.',
+});
 
 const PORT = process.env.PORT || 3000;
 const ALLOWED_ORIGINS = new Set([
@@ -127,6 +131,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 // Customer portal API
 // ============================================================================
 app.use('/api/customer/request-link', linkLimiter);
+app.use('/api/customer/signup', signupLimiter);
 app.use('/api/customer', customerRoutes);
 app.use('/api/customer', checkoutRouter);          // POST /api/customer/create-checkout-session
 app.use('/api/customer/upload', uploadRoutes);

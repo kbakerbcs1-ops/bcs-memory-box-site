@@ -146,15 +146,19 @@
         throw new Error(data.error || 'Sign-up failed.');
       }
 
-      // If they already paid, skip checkout and send them to their portal.
-      if (data.alreadyPaid) {
+      // If an account already exists for this email, the server has emailed the
+      // link to the address on file. We never hand the link back to this page, so
+      // nobody can grab a customer's login just by knowing their email. Tell them
+      // to check their inbox instead of forwarding them.
+      if (data.alreadyExists) {
         showSuccess(
-          '<strong>Welcome back, ' + escapeHtml(name) + '!</strong><br><br>' +
-          'You already have an account. Taking you to your story…'
+          '<strong>Looks like you already have an account!</strong><br><br>' +
+          "We've just emailed your personal link to <strong>" + escapeHtml(email) + "</strong>. " +
+          'Open that email and tap the button to get back to your story ' +
+          '&mdash; and please check your spam folder if you don\'t see it in a minute.'
         );
-        setTimeout(function() {
-          window.location.href = '/yourstory.html?token=' + encodeURIComponent(data.accessToken);
-        }, 800);
+        btn.disabled = false;
+        btn.textContent = 'Continue to Checkout';
         return;
       }
 
