@@ -552,7 +552,7 @@ async function showCustomer(id) {
     // Danger zone — permanently delete this customer (used for clearing test accounts)
     html += '<div class="detail-card danger-card">';
     html +=   '<h2>Danger zone</h2>';
-    html +=   '<p class="muted" style="margin-bottom:14px;">Permanently delete this customer along with all of their recordings and drafts. This cannot be undone — use it to clear out test accounts.</p>';
+    html +=   '<p class="muted" style="margin-bottom:14px;">Remove this customer from the dashboard. Their recordings and files are <strong>kept</strong> and this can be undone &mdash; mainly for clearing out test accounts. You\'ll be asked to type their email to confirm.</p>';
     html +=   '<button class="btn btn-danger" id="delete-customer-btn">Delete this customer</button>';
     html +=   '<span id="delete-status" class="muted" style="margin-left:12px;"></span>';
     html += '</div>';
@@ -564,13 +564,18 @@ async function showCustomer(id) {
     });
 
     document.getElementById('delete-customer-btn').addEventListener('click', async function() {
-      if (!confirm('Permanently delete ' + c.name + ' (' + c.email + ') and all of their recordings and drafts?\n\nThis cannot be undone.')) return;
+      var typed = prompt('Remove ' + c.name + ' from the dashboard.\n\nTheir recordings and files are KEPT — this can be undone.\n\nTo confirm, type their email exactly:\n' + c.email);
+      if (typed === null) return; // cancelled
+      if (typed.trim().toLowerCase() !== (c.email || '').trim().toLowerCase()) {
+        alert('That email did not match — nothing was removed.');
+        return;
+      }
       var btn = document.getElementById('delete-customer-btn');
       var st = document.getElementById('delete-status');
       btn.disabled = true;
-      st.textContent = 'Deleting…'; st.style.color = '#5a4a3a';
+      st.textContent = 'Removing…'; st.style.color = '#5a4a3a';
       try {
-        await api('/api/admin/customer/' + encodeURIComponent(id), { method: 'DELETE' });
+        await api('/api/admin/customer/' + encodeURIComponent(id) + '?confirm=' + encodeURIComponent(typed.trim()), { method: 'DELETE' });
         showDashboard();
       } catch (e) {
         if (e.message !== 'Unauthorized') {

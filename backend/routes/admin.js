@@ -132,6 +132,7 @@ router.get('/customers', requireAdmin, async (req, res) => {
         (SELECT COUNT(*) FROM recordings r WHERE r.customer_id = c.id) AS recording_count,
         (SELECT COUNT(*) FROM drafts d WHERE d.customer_id = c.id) AS draft_count
       FROM customers c
+      WHERE c.deleted_at IS NULL
       ORDER BY c.created_at DESC
     `);
     res.json({ ok: true, customers: rows });
@@ -201,52 +202,35 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
 // DELETE /api/admin/customer/:id
 // Permanently removes a customer along with all of their recordings and drafts.
 // The recordings/drafts rows are removed automatically by the database's
-// ON DELETE CASCADE foreign keys; we additionally make a best-effort attempt
-// to delete their stored files (audio + rendered .docx) from R2 so nothing is
-// left orphaned. Intended for clearing out test accounts before launch.
+// SOFT-delete only (sets deleted_at): the customer disappears from the
+// dashboard but NOTHING is destroyed — recordings, drafts, photos, and all R2
+// audio are kept, so a mistaken delete is fully recoverable. Requires an email
+// confirmation. Used for clearing test accounts before launch.
 // ---------------------------------------------------------------------------
 router.delete('/customer/:id', requireAdmin, async (req, res) => {
   try {
     const customer = await db.queryOne(
-      'SELECT id, email, name FROM customers WHERE id = $1',
+      'SELECT id, email, name, paid_at FROM customers WHERE id = $1 AND deleted_at IS NULL',
       [req.params.id]
     );
-    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    if (!customer) return res.status(404).json({ error: 'Customer not found (or already removed).' });
 
-    // Collect storage keys BEFORE the rows are deleted so we can tidy up R2.
-    const { rows: recs } = await db.query(
-      'SELECT storage_key FROM recordings WHERE customer_id = $1',
-      [req.params.id]
-    );
-    const { rows: drfts } = await db.query(
-      'SELECT docx_storage_key FROM drafts WHERE customer_id = $1',
-      [req.params.id]
-    );
-    const { rows: phts } = await db.query(
-      'SELECT storage_key FROM photos WHERE customer_id = $1',
-      [req.params.id]
-    );
-    const keys = recs.map(r => r.storage_key)
-      .concat(drfts.map(d => d.docx_storage_key))
-      .concat(phts.map(p => p.storage_key))
-      .filter(Boolean);
-
-    // Delete the customer; recordings + drafts go with it via ON DELETE CASCADE.
-    await db.query('DELETE FROM customers WHERE id = $1', [req.params.id]);
-
-    // Best-effort file cleanup — never fail the request just because R2 hiccups.
-    let filesDeleted = 0;
-    for (const key of keys) {
-      try {
-        await storage.deleteObject(key);
-        filesDeleted++;
-      } catch (e) {
-        console.warn('[admin/customer/delete] could not delete ' + key + ': ' + e.message);
-      }
+    // SAFETY GUARD: require the caller to confirm by passing the customer's exact
+    // email (?confirm=<email> or body.confirmEmail). Prevents a mis-clicked id or
+    // a stray retry from ever removing the wrong account.
+    const confirm = String((req.query.confirm || (req.body && req.body.confirmEmail) || '')).trim().toLowerCase();
+    if (confirm !== String(customer.email || '').trim().toLowerCase()) {
+      return res.status(400).json({ error: 'Confirmation email did not match — nothing was removed.' });
     }
 
-    console.log('[admin/customer/delete] removed ' + customer.email + ' (' + customer.id + '), ' + filesDeleted + ' file(s) cleaned up');
-    res.json({ ok: true, deleted: true, email: customer.email, filesDeleted });
+    // SOFT-DELETE ONLY — never hard-delete the row or erase the customer's R2
+    // audio. That audio is an elderly person's irreplaceable life story, and a
+    // permanent delete has no undo. Setting deleted_at hides them from the
+    // dashboard while keeping every recording, draft, and file fully recoverable.
+    // (A deliberate, reviewed purge of truly-unwanted rows can happen later.)
+    await db.query('UPDATE customers SET deleted_at = NOW() WHERE id = $1', [req.params.id]);
+    console.log('[admin/customer/delete] SOFT-deleted ' + customer.email + ' (' + customer.id + ') — recordings + audio KEPT, fully recoverable');
+    res.json({ ok: true, deleted: true, softDeleted: true, recoverable: true, email: customer.email });
   } catch (err) {
     console.error('[admin/customer/delete] error:', err);
     res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
