@@ -52,7 +52,12 @@ function loginLimiter(req, res, next) {
 // Auth middleware — every admin endpoint except /login goes through this
 // ---------------------------------------------------------------------------
 async function requireAdmin(req, res, next) {
-  const token = req.headers['x-admin-session'] || req.query.session;
+  // Audit H5: the session token is accepted ONLY from the header now, never from
+  // the URL (?session=). A standing 7-day full-admin token in a query string
+  // leaks into browser history, proxy/server logs, and referrers. Resources that
+  // must load via a URL (<img> / download links) use short-lived, single-purpose
+  // signed URLs instead — see signResource / allowAdminOrSig below.
+  const token = req.headers['x-admin-session'];
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   const session = await db.queryOne(
     `SELECT token, expires_at FROM admin_sessions
@@ -61,6 +66,46 @@ async function requireAdmin(req, res, next) {
   );
   if (!session) return res.status(401).json({ error: 'Session expired' });
   next();
+}
+
+// ---------------------------------------------------------------------------
+// Short-lived, single-purpose signed URLs for resources that have to be fetched
+// by the browser directly (a photo in an <img>, a recording/QR download link),
+// where a request header can't be set. Instead of embedding the standing admin
+// token, the server signs "<kind>:<id>:<exp>" with a secret only it knows and
+// hands back an ?exp=..&sig=.. suffix. The signature grants access to THAT ONE
+// resource until it expires — not full admin — so a leaked URL is near-useless.
+// ---------------------------------------------------------------------------
+const RESOURCE_URL_TTL_SEC = 12 * 60 * 60; // 12h — long enough to browse, far tighter than a 7-day full-admin token
+function resourceSecret() {
+  // Derive from the admin password (always set; login depends on it). Rotating
+  // the password simply invalidates outstanding signed URLs, which is fine.
+  return 'bcs-resource-url:' + (process.env.ADMIN_PASSWORD || 'unset');
+}
+function signResource(kind, id) {
+  const exp = Math.floor(Date.now() / 1000) + RESOURCE_URL_TTL_SEC;
+  const sig = crypto.createHmac('sha256', resourceSecret()).update(kind + ':' + id + ':' + exp).digest('hex');
+  return 'exp=' + exp + '&sig=' + sig;
+}
+function verifyResource(kind, id, exp, sig) {
+  if (!exp || !sig) return false;
+  const expNum = parseInt(exp, 10);
+  if (!expNum || expNum < Math.floor(Date.now() / 1000)) return false;
+  const expected = crypto.createHmac('sha256', resourceSecret()).update(kind + ':' + id + ':' + exp).digest('hex');
+  try {
+    const a = Buffer.from(String(sig), 'utf8');
+    const b = Buffer.from(expected, 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (_) { return false; }
+}
+// Middleware: allow a valid admin header session (for direct API use) OR a valid
+// signed URL for this exact resource kind + :id. Nothing else.
+function allowAdminOrSig(kind) {
+  return async function (req, res, next) {
+    if (req.headers['x-admin-session']) return requireAdmin(req, res, next);
+    if (verifyResource(kind, String(req.params.id), req.query.exp, req.query.sig)) return next();
+    return res.status(401).json({ error: 'Not authorized' });
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +238,11 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
       [req.params.id]
     );
 
+    // Attach short-lived signed-URL suffixes so the dashboard can load each
+    // photo/recording/QR by URL without ever putting the admin token in a URL (H5).
+    (recordings || []).forEach(function (r) { r.dlSig = signResource('recording', r.id); });
+    (photos || []).forEach(function (p) { p.viewSig = signResource('photo', p.id); });
+    (voiceClips || []).forEach(function (c) { c.qrSig = signResource('voiceclip', c.id); });
     res.json({ ok: true, customer, recordings, drafts, photos, voiceClips });
   } catch (err) {
     console.error('[admin/customer/:id] error:', err);
@@ -315,7 +365,7 @@ router.post('/reminders/run', requireAdmin, async (req, res) => {
 // Returns a temporary download URL for a recording (so Ken can listen to it)
 // V1: just stream it through the server. Later we can presign R2 URLs.
 // ---------------------------------------------------------------------------
-router.get('/recording/:id/download', requireAdmin, async (req, res) => {
+router.get('/recording/:id/download', allowAdminOrSig('recording'), async (req, res) => {
   try {
     const recording = await db.queryOne(
       'SELECT storage_key, original_filename FROM recordings WHERE id = $1',
@@ -339,7 +389,7 @@ router.get('/recording/:id/download', requireAdmin, async (req, res) => {
 // Streams a customer photo inline so Ken can see it in the dashboard. The
 // admin session token is passed as ?session=... so it works in an <img> tag.
 // ---------------------------------------------------------------------------
-router.get('/photo/:id/view', requireAdmin, async (req, res) => {
+router.get('/photo/:id/view', allowAdminOrSig('photo'), async (req, res) => {
   try {
     const photo = await db.queryOne(
       'SELECT storage_key, content_type FROM photos WHERE id = $1',
@@ -625,6 +675,7 @@ router.post('/voice-clip', requireAdmin, async (req, res) => {
       );
     }
 
+    if (clip) clip.qrSig = signResource('voiceclip', clip.id);
     res.json({ ok: true, clip, listenUrl: FRONTEND_BASE + '/listen.html?v=' + clip.public_token });
   } catch (err) {
     console.error('[admin/voice-clip create] error:', err);
@@ -635,7 +686,7 @@ router.post('/voice-clip', requireAdmin, async (req, res) => {
 // GET /api/admin/voice-clip/:id/qr.png?session=...&size=1200
 // Returns a high-resolution PNG QR code (error-correction H, good for print)
 // pointing at the clip's public listen page. Drop it straight into the book.
-router.get('/voice-clip/:id/qr.png', requireAdmin, async (req, res) => {
+router.get('/voice-clip/:id/qr.png', allowAdminOrSig('voiceclip'), async (req, res) => {
   try {
     const clip = await db.queryOne('SELECT public_token FROM voice_clips WHERE id = $1', [req.params.id]);
     if (!clip) return res.status(404).json({ error: 'Voice clip not found' });

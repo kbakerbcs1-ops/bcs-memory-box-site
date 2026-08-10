@@ -176,10 +176,11 @@ async function api(path, opts) {
 function listenUrlFor(clip){ return FRONTEND_BASE + '/listen.html?v=' + clip.public_token; }
 
 function voicePanelHtml(clip){
-  var sess = encodeURIComponent(getSession());
   var url = listenUrlFor(clip);
-  var qrView = API_BASE + '/api/admin/voice-clip/' + clip.id + '/qr.png?size=600&session=' + sess;
-  var qrPrint = API_BASE + '/api/admin/voice-clip/' + clip.id + '/qr.png?size=1200&dl=1&session=' + sess;
+  // H5: short-lived signed suffix from the server — no admin token in the URL.
+  var q = clip.qrSig || '';
+  var qrView = API_BASE + '/api/admin/voice-clip/' + clip.id + '/qr.png?size=600&' + q;
+  var qrPrint = API_BASE + '/api/admin/voice-clip/' + clip.id + '/qr.png?size=1200&dl=1&' + q;
   return '<div class="voice-panel">' +
       '<h3>🎙 Voice QR is ON for this recording</h3>' +
       '<div class="vp-grid">' +
@@ -550,7 +551,7 @@ async function showCustomer(id) {
             '</div>' +
             '<div class="actions">' +
               '<button class="btn btn-voice" onclick="toggleVoice(\'' + r.id + '\')">' + (hasClip ? '\uD83C\uDF99 Voice QR \u2713' : '\uD83C\uDF99 Voice QR') + '</button>' +
-              '<a class="btn" href="' + API_BASE + '/api/admin/recording/' + r.id + '/download?session=' + encodeURIComponent(getSession()) + '" target="_blank">Download</a>' +
+              '<a class="btn" href="' + API_BASE + '/api/admin/recording/' + r.id + '/download?' + (r.dlSig || '') + '" target="_blank">Download</a>' +
             '</div>' +
           '</div>' +
           '<div class="voice-slot" id="voice-slot-' + r.id + '">' + (hasClip ? voicePanelHtml(voiceClipByRec[r.id]) : '') + '</div>' +
@@ -593,7 +594,7 @@ async function showCustomer(id) {
     } else {
       html += '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;">';
       data.photos.forEach(function(p){
-        var src = API_BASE + '/api/admin/photo/' + p.id + '/view?session=' + encodeURIComponent(getSession());
+        var src = API_BASE + '/api/admin/photo/' + p.id + '/view?' + (p.viewSig || '');
         var fmt = escapeHtml(((p.content_type || '').replace('image/','') || 'file').toUpperCase());
         html += '<div style="width:150px;">' +
           '<a href="' + src + '" target="_blank" style="text-decoration:none;">' +
