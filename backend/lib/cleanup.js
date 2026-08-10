@@ -1189,6 +1189,9 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
       `UPDATE drafts SET
          prev_markdown_content = markdown_content,
          prev_docx_storage_key = docx_storage_key,
+         prev_interior_pdf_key = interior_pdf_key,
+         prev_cover_pdf_key = cover_pdf_key,
+         prev_page_count = page_count,
          markdown_content = $1,
          docx_storage_key = $2,
          last_change_summary = $3,

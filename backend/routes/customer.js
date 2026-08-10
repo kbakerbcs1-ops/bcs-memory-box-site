@@ -499,7 +499,9 @@ router.post('/keep-revision', async (req, res) => {
     }
     await db.query(
       `UPDATE drafts SET revision_status = 'idle', last_change_summary = NULL,
-         prev_markdown_content = NULL, prev_docx_storage_key = NULL, revision_error = NULL
+         prev_markdown_content = NULL, prev_docx_storage_key = NULL,
+         prev_interior_pdf_key = NULL, prev_cover_pdf_key = NULL, prev_page_count = NULL,
+         revision_error = NULL
        WHERE id = $1`,
       [draft.id]
     );
@@ -536,7 +538,11 @@ router.post('/undo-revision', async (req, res) => {
       `UPDATE drafts SET
          markdown_content = prev_markdown_content,
          docx_storage_key = prev_docx_storage_key,
+         interior_pdf_key = COALESCE(prev_interior_pdf_key, interior_pdf_key),
+         cover_pdf_key    = COALESCE(prev_cover_pdf_key, cover_pdf_key),
+         page_count       = COALESCE(prev_page_count, page_count),
          prev_markdown_content = NULL, prev_docx_storage_key = NULL,
+         prev_interior_pdf_key = NULL, prev_cover_pdf_key = NULL, prev_page_count = NULL,
          last_change_summary = NULL, revision_status = 'idle', revision_error = NULL
        WHERE id = $1`,
       [draft.id]
