@@ -75,13 +75,37 @@ router.post('/', upload.single('photo'), async (req, res) => {
     let photoMime = photo.mimetype || '';
     let photoName = photo.originalname || 'photo';
     if (isHeic(photoBuffer, photoName, photoMime)) {
+      let converted = false;
+      // FAST PATH: sharp (libvips) can decode HEIC AND orient + downsize in one
+      // native pass — a couple of seconds, versus the ~minute the pure-JS
+      // heic-convert takes on this small server. That slowness was timing out
+      // full-resolution iPhone photos uploaded from Chrome (Safari shrinks HEIC
+      // in the browser first, so it never hit this path — which is why it only
+      // failed in Chrome). Doing the resize here too means the separate downscale
+      // block below is a no-op for HEIC.
       try {
-        const heicConvert = require('heic-convert');
-        photoBuffer = Buffer.from(await heicConvert({ buffer: photoBuffer, format: 'JPEG', quality: 0.9 }));
+        const sharp = require('sharp');
+        photoBuffer = await sharp(photoBuffer, { failOn: 'none' })
+          .rotate() // bake EXIF orientation
+          .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
         photoMime = 'image/jpeg';
         photoName = photoName.replace(/\.(heic|heif)$/i, '') + '.jpg';
+        converted = true;
       } catch (e) {
-        console.error('[photo upload] HEIC conversion failed, storing original: ' + e.message);
+        console.error('[photo upload] sharp HEIC path failed (' + e.message + '); trying heic-convert');
+      }
+      // FALLBACK: the pure-JS converter, only if this sharp build can't read HEIF.
+      if (!converted) {
+        try {
+          const heicConvert = require('heic-convert');
+          photoBuffer = Buffer.from(await heicConvert({ buffer: photoBuffer, format: 'JPEG', quality: 0.9 }));
+          photoMime = 'image/jpeg';
+          photoName = photoName.replace(/\.(heic|heif)$/i, '') + '.jpg';
+        } catch (e) {
+          console.error('[photo upload] HEIC conversion failed, storing original: ' + e.message);
+        }
       }
     }
 
