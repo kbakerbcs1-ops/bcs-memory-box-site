@@ -313,18 +313,39 @@ async function runCleanupPipeline(customerId) {
       // no questions worth asking -> fall through and finalize
     }
 
-    // 8. FINALIZE: draft is ready for Ken.
-    await db.query("UPDATE customers SET status = 'draft_ready', follow_up_done = TRUE WHERE id = $1", [customerId]);
-    // Notify Ken — but a mail hiccup must NEVER roll a finished draft back to
-    // 'error'. The draft is built and saved; if the email fails we log it and
-    // leave the customer in 'draft_ready' (Ken still sees it in the dashboard).
+    // 8. FINALIZE: the book is done — AUTO-DELIVER it straight to the customer.
+    //    Ken is a one-man shop; the AI does the heavy lifting and hands the
+    //    finished book to the storyteller directly, with no manual review gate.
+    //    The draft already has its rendered .docx (docx_storage_key set above),
+    //    so we just mark it delivered — the same end state the manual "Approve
+    //    and Send" path produces.
+    await db.query(
+      "UPDATE drafts SET status = 'delivered', approved_at = NOW(), delivered_at = NOW() WHERE id = $1",
+      [draft.id]
+    );
+    await db.query("UPDATE customers SET status = 'delivered', follow_up_done = TRUE WHERE id = $1", [customerId]);
+
+    // Tell the CUSTOMER their book is ready to read and approve. A mail hiccup
+    // must NEVER roll a finished, delivered book back to 'error' — it is built,
+    // saved and delivered. If the email fails we log it and alert Ken so he can
+    // resend the link by hand (the one case where he does need to step in).
     try {
-      await emailAdminDraftReady(customer, draft.id);
+      await emailCustomerDelivered(customer);
     } catch (e) {
-      console.error('[cleanup] draft is READY but the notify email failed (draft stands): ' + e.message);
+      console.error('[cleanup] book DELIVERED but the customer email failed (delivery stands): ' + e.message);
+      try { await emailAdminDeliveryEmailFailed(customer, e.message); }
+      catch (e2) { console.error('[cleanup] also could not alert Ken about the failed delivery email: ' + e2.message); }
     }
 
-    console.log('[cleanup] Pipeline complete for ' + customer.name + ' — draft ' + draft.id);
+    // FYI to Ken — informational only, no action needed; the book is already
+    // with the customer.
+    try {
+      await emailAdminDelivered(customer, draft.id);
+    } catch (e) {
+      console.error('[cleanup] could not send Ken the delivered FYI (harmless): ' + e.message);
+    }
+
+    console.log('[cleanup] Pipeline complete — AUTO-DELIVERED ' + customer.name + "'s book to the customer — draft " + draft.id);
     return draft.id;
   } catch (err) {
     console.error('[cleanup] Pipeline FAILED for customer ' + customerId, err);
@@ -706,6 +727,56 @@ async function emailAdminDraftReady(customer, draftId) {
 '<p style="color:#888;font-size:13px;">Draft ID: ' + draftId + '</p>' +
 '</div>';
 
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
+// The customer-facing "your book is ready" email, sent automatically when the
+// pipeline finishes a draft. Mirrors the manual Approve-and-Send email in
+// routes/admin.js so both paths give the storyteller the same experience.
+async function emailCustomerDelivered(customer) {
+  const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(customer.access_token);
+  const subject = 'Your Memory Box memoir is ready';
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.65;color:#2a2520;background:#fff;padding:32px;border-radius:8px;">' +
+'<p>Hi ' + escapeHtml(customer.name) + ',</p>' +
+'<p>Wonderful news — your memoir is ready to read. Everything you recorded has been woven together into your book, and it is waiting for you on your story page.</p>' +
+'<p style="margin-top:28px;">' +
+'<a href="' + portalUrl + '" style="background:#8b5a2b;color:#fff;padding:14px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Georgia,serif;font-weight:bold;">Open your memoir</a>' +
+'</p>' +
+'<p style="font-size:15px;color:#6b5d4f;margin-top:6px;">If the button above does not open, copy and paste this web address into your web browser:<br>' +
+'<a href="' + portalUrl + '" style="color:#8b5a2b;word-break:break-all;">' + portalUrl + '</a></p>' +
+'<p>Please read it through. From your story page you can download the Word document to keep for your family.</p>' +
+'<p>If anything reads wrong, or you would like something changed, just click <strong>Request a revision</strong> on that same page and tell me in your own words — your purchase includes two rounds of revisions. When it reads just the way you want, click <strong>Approve</strong> and I will send it off to be printed as your hardcover book.</p>' +
+'<p style="margin-top:28px;">— Ken Baker<br>BCS Memory Box</p>' +
+'</div>';
+  return sendEmail(customer.email, subject, html);
+}
+
+// Heads-up to Ken that a book auto-delivered. Informational only — no action.
+async function emailAdminDelivered(customer, draftId) {
+  const subject = customer.name + "'s book is done — auto-delivered to the customer";
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#8b5a2b;">Book delivered — no action needed</h2>' +
+'<p>The pipeline finished <strong>' + escapeHtml(customer.name) + '</strong>\'s memoir (' + escapeHtml(customer.email) + ') and <strong>sent it straight to them</strong> to read and approve. You do not need to do anything.</p>' +
+'<p>They will read it, request any revisions in their own words, and approve when it reads right — the approved book prints automatically.</p>' +
+'<p style="color:#888;font-size:13px;">Heads-up only. Draft ID: ' + draftId + '</p>' +
+'</div>';
+  return sendEmail('kbakerbcs1@gmail.com', subject, html);
+}
+
+// The one case where Ken DOES need to step in: the book delivered fine but the
+// customer's "it's ready" email bounced, so they don't know to come read it.
+async function emailAdminDeliveryEmailFailed(customer, reason) {
+  const subject = 'ACTION NEEDED: ' + customer.name + "'s book is ready but the email to them failed";
+  const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(customer.access_token);
+  const html =
+'<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+'<h2 style="color:#b4432a;">Delivery email failed — please resend the link</h2>' +
+'<p><strong>' + escapeHtml(customer.name) + '</strong> (' + escapeHtml(customer.email) + ') has a finished, delivered book, but the email telling them it is ready <strong>did not send</strong>, so they don\'t know to come read it.</p>' +
+'<p>Please send them their story-page link by hand:<br><a href="' + portalUrl + '" style="color:#8b5a2b;word-break:break-all;">' + portalUrl + '</a></p>' +
+'<p style="color:#7a726a;font-size:13px;">Reason: ' + escapeHtml(reason || 'unknown') + '</p>' +
+'</div>';
   return sendEmail('kbakerbcs1@gmail.com', subject, html);
 }
 
