@@ -439,13 +439,13 @@ async function polishWithClaude(customerName, combinedTranscripts, photos, answe
     body: JSON.stringify({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 16000,
+      stream: true,
       system: MEMOIR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error: ' + await resp.text());
-  const data = await resp.json();
-  const text = (data.content || []).map(b => b.text || '').join('');
+  const text = await readClaudeStream(resp);
   return text.trim();
 }
 
@@ -489,13 +489,13 @@ async function polishCoupleWithClaude(name1, name2, combinedTranscripts, photos,
     body: JSON.stringify({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 16000,
+      stream: true,
       system: COUPLE_MEMOIR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error (couple): ' + await resp.text());
-  const data = await resp.json();
-  const text = (data.content || []).map(b => b.text || '').join('');
+  const text = await readClaudeStream(resp);
   return text.trim();
 }
 
@@ -809,6 +809,40 @@ async function fetchWithRetry(url, options, label) {
   }
 }
 
+// Read an Anthropic STREAMING (SSE) response and return the full assistant text.
+// The big memoir/revision generations are streamed (stream:true) because a
+// non-streaming request keeps the connection open with NO response headers until
+// Claude finishes — and a large book (e.g. Kelly's 11 recordings) can run past
+// Node's ~5-minute headers timeout, throwing UND_ERR_HEADERS_TIMEOUT ("fetch
+// failed") and killing the whole pipeline. Streaming returns headers immediately
+// and the text arrives in deltas, so there is no long silent wait to time out.
+async function readClaudeStream(resp) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '', text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      let evt;
+      try { evt = JSON.parse(payload); } catch (e) { continue; }
+      if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
+        text += evt.delta.text;
+      } else if (evt.type === 'error') {
+        throw new Error('Claude stream error: ' + JSON.stringify(evt.error || evt));
+      }
+    }
+  }
+  return text;
+}
+
 // ----------------------------------------------------------------------------
 // Safety net ("reaper"): detect customers stuck in 'processing' — a pipeline
 // that died silently (e.g. the server restarted mid-run) — and email Ken so no
@@ -1088,13 +1122,13 @@ async function applyRevision(currentMarkdown, instruction, customerName) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 16000,
+      stream: true,
       system: REVISION_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude revision error: ' + await resp.text());
-  const data = await resp.json();
-  const text = (data.content || []).map(b => b.text || '').join('').trim();
+  const text = (await readClaudeStream(resp)).trim();
 
   // Parse the delimiter format (robust against multi-line Markdown).
   const marker = text.indexOf('---MEMOIR---');
