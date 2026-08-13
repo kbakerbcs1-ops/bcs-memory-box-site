@@ -313,39 +313,39 @@ async function runCleanupPipeline(customerId) {
       // no questions worth asking -> fall through and finalize
     }
 
-    // 8. FINALIZE: the book is done — AUTO-DELIVER it straight to the customer.
-    //    Ken is a one-man shop; the AI does the heavy lifting and hands the
-    //    finished book to the storyteller directly, with no manual review gate.
-    //    The draft already has its rendered .docx (docx_storage_key set above),
-    //    so we just mark it delivered — the same end state the manual "Approve
-    //    and Send" path produces.
-    await db.query(
-      "UPDATE drafts SET status = 'delivered', approved_at = NOW(), delivered_at = NOW() WHERE id = $1",
-      [draft.id]
-    );
-    await db.query("UPDATE customers SET status = 'delivered', follow_up_done = TRUE WHERE id = $1", [customerId]);
+    // 8. FINALIZE: the book is ready — hand it straight to the CUSTOMER to read
+    //    and approve. No manual review gate: Ken is a one-man shop, so the AI
+    //    delivers to the storyteller directly. The draft stays 'ready_for_review'
+    //    and the customer sits at 'draft_ready' — the state whose story page shows
+    //    the memoir PLUS the "tell me a change" and "approve" buttons. When they
+    //    approve, the existing auto-print flow runs (customers/approve-book ->
+    //    'approved' -> Lulu). Ken never has to touch it.
+    //    NOTE: do NOT set status 'delivered' here — that is a terminal state with
+    //    NO approve button (it's what Ken's manual "Approve and Send" produces),
+    //    so finishing into 'delivered' would strand the customer with no way to
+    //    approve their own book.
+    await db.query("UPDATE customers SET status = 'draft_ready', follow_up_done = TRUE WHERE id = $1", [customerId]);
 
     // Tell the CUSTOMER their book is ready to read and approve. A mail hiccup
-    // must NEVER roll a finished, delivered book back to 'error' — it is built,
-    // saved and delivered. If the email fails we log it and alert Ken so he can
-    // resend the link by hand (the one case where he does need to step in).
+    // must NEVER roll a finished draft back to 'error' — it is built and saved.
+    // If the email fails we log it and alert Ken so he can send the link by hand.
     try {
       await emailCustomerDelivered(customer);
     } catch (e) {
-      console.error('[cleanup] book DELIVERED but the customer email failed (delivery stands): ' + e.message);
+      console.error('[cleanup] draft READY but the customer email failed (draft stands): ' + e.message);
       try { await emailAdminDeliveryEmailFailed(customer, e.message); }
-      catch (e2) { console.error('[cleanup] also could not alert Ken about the failed delivery email: ' + e2.message); }
+      catch (e2) { console.error('[cleanup] also could not alert Ken about the failed email: ' + e2.message); }
     }
 
     // FYI to Ken — informational only, no action needed; the book is already
-    // with the customer.
+    // with the customer to read and approve.
     try {
       await emailAdminDelivered(customer, draft.id);
     } catch (e) {
-      console.error('[cleanup] could not send Ken the delivered FYI (harmless): ' + e.message);
+      console.error('[cleanup] could not send Ken the FYI (harmless): ' + e.message);
     }
 
-    console.log('[cleanup] Pipeline complete — AUTO-DELIVERED ' + customer.name + "'s book to the customer — draft " + draft.id);
+    console.log('[cleanup] Pipeline complete — draft READY and sent to ' + customer.name + ' to read and approve — draft ' + draft.id);
     return draft.id;
   } catch (err) {
     console.error('[cleanup] Pipeline FAILED for customer ' + customerId, err);
