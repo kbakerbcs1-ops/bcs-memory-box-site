@@ -320,6 +320,29 @@ router.post('/customer/:id/reprocess', requireAdmin, async (req, res) => {
 // end-to-end (the same channel every alert uses). The "Test alerts" button on
 // the dashboard calls this.
 // ---------------------------------------------------------------------------
+// POST /api/admin/customer/:id/return-to-review
+// Move a customer who was pushed to 'delivered' (e.g. via the manual
+// "Approve and Send") back to 'draft_ready' so THEY can read and approve on
+// their own story page. 'delivered' has no customer approve button, so a book
+// sent there is stranded — this hands control back to the storyteller. Also
+// flips the draft 'delivered' -> 'ready_for_review' so the memoir keeps loading.
+router.post('/customer/:id/return-to-review', requireAdmin, async (req, res) => {
+  try {
+    const customer = await db.queryOne(
+      'SELECT id, name, status FROM customers WHERE id = $1 AND deleted_at IS NULL',
+      [req.params.id]
+    );
+    if (!customer) return res.status(404).json({ error: 'Customer not found.' });
+    await db.query("UPDATE customers SET status = 'draft_ready' WHERE id = $1", [customer.id]);
+    await db.query("UPDATE drafts SET status = 'ready_for_review' WHERE customer_id = $1 AND status = 'delivered'", [customer.id]);
+    console.log('[admin/return-to-review] ' + customer.id + ' (' + (customer.name || '') + ') ' + customer.status + ' -> draft_ready');
+    res.json({ ok: true, status: 'draft_ready', was: customer.status });
+  } catch (err) {
+    console.error('[admin/customer/return-to-review] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
 router.post('/test-alert', requireAdmin, async (req, res) => {
   try {
     await cleanup.sendHeartbeat('manual test');
