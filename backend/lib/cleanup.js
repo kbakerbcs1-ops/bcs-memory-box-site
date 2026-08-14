@@ -1141,6 +1141,64 @@ async function generateFollowUpQuestions(combinedTranscripts, draftMarkdown) {
     .slice(0, 4);
 }
 
+// ---------------------------------------------------------------------------
+// PERSONALIZED "next question" for the recording page — suggests the ONE next
+// thing to talk about, built from what the storyteller has already recorded.
+// Used by the /api/customer/next-question progressive-enhancement endpoint.
+// ---------------------------------------------------------------------------
+const NEXT_QUESTION_SYSTEM_PROMPT = [
+"You help a senior tell their life story by suggesting the SINGLE next thing to talk about. You will receive transcripts of the stories they have already recorded.",
+"Return ONE short, warm, specific question that invites a NEW story they have not told yet, or gently draws out more about a person, place, or moment they only touched on. It should feel like a caring interviewer who actually listened and asks the natural next question.",
+"RULES:",
+"- ONE question only. No preamble, no lead-in, no lists, no quotation marks. Output only the question itself.",
+"- Make it concrete and specific (a person, a place, an object, a day) so it is easy to answer. Never vague like 'tell me more about your life'.",
+"- Do NOT ask about something they already covered well. Move them forward to new ground.",
+"- Warm, plain, grandparent-friendly. One sentence, or two short ones at most.",
+"- Only build on what the transcripts actually contain. Never invent facts about them.",
+].join('\n');
+
+async function generateNextQuestion(combinedTranscripts, name) {
+  const userMsg = 'The storyteller' + (name ? ' (' + name + ')' : '') +
+    ' has recorded these stories so far:\n\n' + combinedTranscripts +
+    '\n\n----\n\nSuggest the ONE next question to ask them.';
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 200,
+      system: NEXT_QUESTION_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude API error (next-question): ' + await resp.text());
+  const data = await resp.json();
+  const text = (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
+  // Strip any stray leading bullet/number/quote or trailing quote.
+  return text.replace(/^["'\s]*(?:[-*•]|\d+[.)])?\s*/, '').replace(/\s*["']\s*$/, '').trim();
+}
+
+// Transcribe ONE recording in the background (fire-and-forget). NON-THROWING:
+// on failure it just marks the row 'error' and the finish pipeline will
+// re-transcribe anything not 'completed', so nothing is ever lost. This gets a
+// transcript ready EARLY (while the storyteller is still recording) so the next
+// visit can show a personalized next question.
+async function transcribeRecordingInBackground(recording, isCouple) {
+  if (!recording || !recording.storage_key) return;
+  try {
+    await db.query("UPDATE recordings SET transcript_status = 'transcribing' WHERE id = $1 AND transcript_status IS DISTINCT FROM 'completed'", [recording.id]);
+    const transcript = await transcribeFromR2(recording.storage_key, isCouple ? { speakerLabels: true, speakersExpected: 2 } : {});
+    await db.query("UPDATE recordings SET transcript = $1, transcript_status = 'completed' WHERE id = $2", [transcript, recording.id]);
+  } catch (e) {
+    console.error('[next-question] background transcribe failed for ' + recording.id + ': ' + e.message);
+    try { await db.query("UPDATE recordings SET transcript_status = 'error', transcript_error = $1 WHERE id = $2", [String(e.message).slice(0, 300), recording.id]); } catch (e2) {}
+  }
+}
+
 // Invite the customer to answer their follow-up questions (spoken), enriching
 // their book. Links them back to their story page.
 async function emailCustomerFollowUp(customer) {
@@ -1323,6 +1381,9 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
 module.exports = {
   runCleanupPipeline,
   generateFollowUpQuestions,
+  generateNextQuestion,
+  transcribeRecordingInBackground,
+  transcribeFromR2,
   emailAdminDraftReady,
   checkStuckCustomers,
   recoverStuckOnBoot,
