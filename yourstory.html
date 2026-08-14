@@ -307,11 +307,79 @@ function renderPhotoCard(photos) {
   return html;
 }
 
+// A gentle bank of specific, senior-friendly questions. Shown one at a time at
+// the top of the recording page so a storyteller always has ONE easy thing to
+// talk about instead of a blank "record your whole life story." Not personalized
+// yet (that needs transcripts we only have after "I'm done") — a clean phase 2.
+var QUESTION_BANK = [
+  'What was your first job, and what did it teach you?',
+  'Tell me about the house you grew up in. What do you remember walking through the front door?',
+  'What did your father or mother do for a living, and what did you learn from watching them?',
+  'Was there a car you loved? Where did it take you?',
+  'What was a Sunday like when you were a child?',
+  'Who was your best friend growing up, and what did the two of you get up to?',
+  'What is a skill you are proud of — something you can do that most people cannot?',
+  'What did your hometown smell like and sound like?',
+  'Tell me about a teacher, a boss, or someone who changed your path.',
+  'What is the best meal you remember, and who made it?',
+  'What were you like as a young person — the part your grandkids would be surprised to hear?',
+  'What is a lesson you learned the hard way that you would pass on?',
+  'If you served in the military, what do you remember about your first day?',
+  'Tell me about the day one of your children was born.',
+  'What did you do for fun before you had responsibilities?',
+  'What is something you built, fixed, or made with your own hands?',
+  'What was going on in the world when you were young, and how did it touch your family?',
+  'Who in your family do you most take after, and how?',
+  'What is a place that mattered to you, and why?',
+  'How did you meet the love of your life? What do you remember about that day?',
+  'What is a tradition your family kept, and where did it come from?',
+  'What is the hardest thing you ever came through — and what got you to the other side?'
+];
+var _sqLast = -1;
+function pickQuestion() {
+  if (QUESTION_BANK.length <= 1) return QUESTION_BANK[0];
+  var i;
+  do { i = Math.floor(Math.random() * QUESTION_BANK.length); } while (i === _sqLast);
+  _sqLast = i;
+  return QUESTION_BANK[i];
+}
+
+// The single-question card that leads the recording page. Additive — everything
+// the storyteller already knows (their recordings, the recorder, photos) is still
+// below, untouched. The question is an INVITATION, not a gate.
+function renderSuggestedQuestion(data) {
+  var recordings = data.recordings || [];
+  var q = pickQuestion();
+  var celebrate = '';
+  if (recordings.length > 0) {
+    var n = recordings.length;
+    celebrate = '<div style="display:flex;align-items:center;gap:8px;color:#2a6b3a;font-size:15px;margin-top:16px;">' +
+      '<span style="font-weight:bold;">✓</span><span>' + n + ' ' + (n === 1 ? 'story' : 'stories') +
+      ' saved — that’s already a chapter of your book.</span></div>';
+  }
+  return '<div class="card">' +
+    '<div style="background:#f2ede0;border:1px solid #e3d8bf;border-radius:8px;padding:10px 14px;font-size:14px;line-height:1.5;color:#6b5d4f;margin-bottom:18px;">' +
+      '<strong style="color:#8b5a2b;">New —</strong> I’ll suggest something to talk about each time, to make it easier. You can always just talk about whatever you like.' +
+    '</div>' +
+    '<div class="eyebrow">Something to talk about</div>' +
+    '<p id="sq-text" style="font-size:23px;line-height:1.4;color:#2a2520;margin:6px 0 20px;">' + escapeHtml(q) + '</p>' +
+    '<button class="btn btn-large" id="sq-record">● Record your answer</button>' +
+    '<div style="margin-top:14px;">' +
+      '<button type="button" id="sq-another" style="background:none;border:none;color:#8b5a2b;cursor:pointer;font-size:15px;text-decoration:underline;padding:0;">Show me a different question</button>' +
+      '<span style="color:#c9bda3;margin:0 9px;">·</span>' +
+      '<span style="color:#9a8b78;font-size:15px;">or talk about anything you like</span>' +
+    '</div>' +
+    '<p style="font-size:14px;color:#9a8b78;font-style:italic;margin:18px 0 0;">There’s no finish line — add a memory whenever one comes to you.</p>' +
+    celebrate +
+  '</div>';
+}
+
 function renderRecordingPage(data) {
   var c = data.customer;
   var recordings = data.recordings || [];
   var photos = data.photos || [];
   var html = renderStatusBar(c.status);
+  html += renderSuggestedQuestion(data);
   html += '<div class="card">';
   var firstName = escapeHtml((c.name || '').split(' ')[0] || 'there');
   var isCouple = !!c.isCouple;
@@ -1050,6 +1118,7 @@ function renderError(msg) {
     // uploader, the I'm done button, and the revision form.
     bindUploadHandler();
     bindRecordHandler();
+    bindSuggestedQuestion();
     bindFollowUpHandlers();
     bindPhotoHandler();
     bindDoneHandler(data.customer.status);
@@ -1075,6 +1144,26 @@ function renderErrorState(customer) {
       '<button class="btn btn-large" id="retry-btn">Retry processing</button>' +
       '<p id="retry-status" class="muted" style="text-align:center;font-size:13px;margin-top:8px;"></p>' +
     '</div>';
+}
+
+// Wire the leading "suggested question" card: cycle to another question, and
+// let "Record your answer" scroll to the recorder and start it (reusing the
+// existing recorder — no second recording implementation).
+function bindSuggestedQuestion() {
+  var another = document.getElementById('sq-another');
+  if (another) another.addEventListener('click', function() {
+    var el = document.getElementById('sq-text');
+    if (el) el.textContent = pickQuestion();
+  });
+  var rec = document.getElementById('sq-record');
+  if (rec) rec.addEventListener('click', function() {
+    var target = document.getElementById('record-btn');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!window.__bcsRecording) {
+      setTimeout(function() { try { target.click(); } catch (e) {} }, 450);
+    }
+  });
 }
 
 // Wire the I'm done button (and the retry button when in error state).
