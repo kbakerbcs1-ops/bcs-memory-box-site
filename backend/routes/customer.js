@@ -5,7 +5,11 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
-const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync } = require('../lib/cleanup');
+const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync, transcribeRecordingInBackground, generateNextQuestion } = require('../lib/cleanup');
+// In-memory cache of the personalized "next question" per customer, keyed on how
+// many of their recordings are transcribed — so we only call the AI when that
+// grows, not on every page load. Lost on restart (just regenerates); no DB needed.
+const _nextQCache = new Map();
 const printOrder = require('../lib/printOrder');
 const lulu = require('../lib/lulu');
 const pricing = require('../lib/pricing');
@@ -213,6 +217,62 @@ router.get('/me', async (req, res) => {
   }
 });
 
+
+// ---------------------------------------------------------------------------
+// GET /api/customer/next-question?token=<access_token>
+// A personalized "picking up where you left off" question for the recording
+// page, built from what the storyteller has already recorded. Progressive
+// enhancement: returns { question: null } until transcripts exist (the frontend
+// keeps its curated question then). Fires background transcription for any
+// not-yet-transcribed clips so the NEXT visit can be personalized. The generated
+// question is cached per customer+transcribed-count to limit AI calls.
+// ---------------------------------------------------------------------------
+router.get('/next-question', async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.json({ question: null });
+    const customer = await db.queryOne(
+      'SELECT id, name, is_couple FROM customers WHERE access_token = $1',
+      [token]
+    );
+    if (!customer) return res.json({ question: null });
+
+    const { rows: recs } = await db.query(
+      'SELECT id, storage_key, transcript, transcript_status FROM recordings WHERE customer_id = $1 ORDER BY created_at ASC',
+      [customer.id]
+    );
+    if (recs.length === 0) return res.json({ question: null });
+
+    const done = recs.filter(function (r) { return r.transcript && r.transcript_status === 'completed'; });
+
+    // Fire background transcription for clips not yet done (skip ones already
+    // in-flight, done, or errored — so we never loop cost on a bad clip).
+    recs.filter(function (r) {
+      return !(r.transcript && r.transcript_status === 'completed') &&
+             r.transcript_status !== 'transcribing' && r.transcript_status !== 'error';
+    }).forEach(function (r) { transcribeRecordingInBackground(r, customer.is_couple); });
+
+    if (done.length === 0) return res.json({ question: null });
+
+    const cached = _nextQCache.get(customer.id);
+    if (cached && cached.count === done.length) {
+      return res.json({ question: cached.question, personalized: true });
+    }
+
+    const combined = done.map(function (r) { return (r.transcript || '').trim(); })
+                         .filter(Boolean).join('\n\n----\n\n');
+    let question = null;
+    try { question = await generateNextQuestion(combined, customer.name); }
+    catch (e) { console.error('[next-question] generation failed: ' + e.message); }
+    if (!question) return res.json({ question: null });
+
+    _nextQCache.set(customer.id, { count: done.length, question: question });
+    res.json({ question: question, personalized: true });
+  } catch (err) {
+    console.error('[next-question] error:', err);
+    res.json({ question: null });
+  }
+});
 
 
 // ---------------------------------------------------------------------------
