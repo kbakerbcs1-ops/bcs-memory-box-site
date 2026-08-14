@@ -199,6 +199,12 @@ async function createPrintJob({
       pod_package_id: podPackageId || DEFAULT_POD_PACKAGE_ID,
       quantity: quantity || 1,
       printable_normalization: {
+        // Lulu's print-jobs validator requires pod_package_id INSIDE
+        // printable_normalization when the full cover/interior form is used
+        // (its 400 was: line_items[].printable_normalization.pod_package_id
+        // "This field is required."). We also keep it at the line-item top
+        // level, where the OpenAPI spec lists it — satisfies both.
+        pod_package_id: podPackageId || DEFAULT_POD_PACKAGE_ID,
         cover: { source_url: coverUrl },
         interior: { source_url: interiorUrl },
       },
