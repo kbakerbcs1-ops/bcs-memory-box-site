@@ -7,6 +7,7 @@ const db = require('../lib/db');
 const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
 const lulu = require('../lib/lulu');
+const printOrder = require('../lib/printOrder');
 const cleanup = require('../lib/cleanup');
 const reminders = require('../lib/reminders');
 const crypto = require('crypto');
@@ -339,6 +340,33 @@ router.post('/customer/:id/return-to-review', requireAdmin, async (req, res) => 
     res.json({ ok: true, status: 'draft_ready', was: customer.status });
   } catch (err) {
     console.error('[admin/customer/return-to-review] error:', err);
+    res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
+// POST /api/admin/customer/:id/retry-print
+// Re-attempt the automatic hardcover order for a customer who already approved
+// but whose order failed (e.g. the pod_package_id payload bug, or a transient
+// API error). Re-runs autoOrderOnApproval on their approved draft. The print_jobs
+// idempotency only re-claims a row in a terminal state (error/canceled/validated),
+// so this can NEVER duplicate an order that actually reached Lulu.
+router.post('/customer/:id/retry-print', requireAdmin, async (req, res) => {
+  try {
+    const customer = await db.queryOne(
+      'SELECT * FROM customers WHERE id = $1 AND deleted_at IS NULL',
+      [req.params.id]
+    );
+    if (!customer) return res.status(404).json({ error: 'Customer not found.' });
+    const draft = await db.queryOne(
+      "SELECT * FROM drafts WHERE customer_id = $1 AND status IN ('approved','delivered') ORDER BY version DESC LIMIT 1",
+      [customer.id]
+    );
+    if (!draft) return res.status(400).json({ error: 'No approved draft to print for this customer.' });
+    const result = await printOrder.autoOrderOnApproval(customer, draft);
+    console.log('[admin/retry-print] ' + customer.id + ' (' + (customer.name || '') + ') -> ' + JSON.stringify(result));
+    res.json({ ok: true, result });
+  } catch (err) {
+    console.error('[admin/retry-print] error:', err);
     res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
   }
 });
