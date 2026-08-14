@@ -361,7 +361,7 @@ function renderSuggestedQuestion(data) {
     '<div style="background:#f2ede0;border:1px solid #e3d8bf;border-radius:8px;padding:10px 14px;font-size:14px;line-height:1.5;color:#6b5d4f;margin-bottom:18px;">' +
       '<strong style="color:#8b5a2b;">New —</strong> I’ll suggest something to talk about each time, to make it easier. You can always just talk about whatever you like.' +
     '</div>' +
-    '<div class="eyebrow">Something to talk about</div>' +
+    '<div class="eyebrow" id="sq-eyebrow">Something to talk about</div>' +
     '<p id="sq-text" style="font-size:23px;line-height:1.4;color:#2a2520;margin:6px 0 20px;">' + escapeHtml(q) + '</p>' +
     '<button class="btn btn-large" id="sq-record">● Record your answer</button>' +
     '<div style="margin-top:14px;">' +
@@ -1150,8 +1150,10 @@ function renderErrorState(customer) {
 // let "Record your answer" scroll to the recorder and start it (reusing the
 // existing recorder — no second recording implementation).
 function bindSuggestedQuestion() {
+  var _sqUserPicked = false;
   var another = document.getElementById('sq-another');
   if (another) another.addEventListener('click', function() {
+    _sqUserPicked = true;
     var el = document.getElementById('sq-text');
     if (el) el.textContent = pickQuestion();
   });
@@ -1164,6 +1166,27 @@ function bindSuggestedQuestion() {
       setTimeout(function() { try { target.click(); } catch (e) {} }, 450);
     }
   });
+  // Progressive enhancement: ask the backend for a personalized "picking up where
+  // you left off" question built from what they've already recorded. If one comes
+  // back (and they haven't manually picked another), swap it in; otherwise the
+  // curated question already on screen stays. Never blocks, never breaks.
+  var sqText = document.getElementById('sq-text');
+  var tok = sqText ? getToken() : null;
+  if (tok) {
+    var _ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    if (_ctrl) setTimeout(function() { try { _ctrl.abort(); } catch (e) {} }, 12000);
+    fetch(API_BASE + '/api/customer/next-question?token=' + encodeURIComponent(tok), _ctrl ? { signal: _ctrl.signal } : {})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.question && !_sqUserPicked) {
+          var el = document.getElementById('sq-text');
+          if (el) el.textContent = d.question;
+          var eb = document.getElementById('sq-eyebrow');
+          if (eb) eb.textContent = 'Picking up where you left off';
+        }
+      })
+      .catch(function() {});
+  }
 }
 
 // Wire the I'm done button (and the retry button when in error state).
