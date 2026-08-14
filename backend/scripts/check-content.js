@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { RETIRED_PRICE_TOKENS } = require('../lib/pricing');
+const { runFlowChecks } = require('./check-flow');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const BACKEND = path.resolve(__dirname, '..');
@@ -60,13 +61,24 @@ for (const file of files) {
   });
 }
 
-if (hits.length) {
-  console.error('❌ Content guard FAILED — retired price token(s) found:');
-  console.error('   (retired prices per lib/pricing.js: ' + RETIRED_PRICE_TOKENS.join(', ') + ')\n');
-  hits.forEach(h => console.error('   ' + h));
-  console.error('\nUpdate these to the current price, or change RETIRED_PRICE_TOKENS if a price was un-retired.');
+// Flow guard: make sure the customer can still read + APPROVE their own book.
+const flowErrors = runFlowChecks();
+
+if (hits.length || flowErrors.length) {
+  if (hits.length) {
+    console.error('❌ Content guard FAILED — retired price token(s) found:');
+    console.error('   (retired prices per lib/pricing.js: ' + RETIRED_PRICE_TOKENS.join(', ') + ')\n');
+    hits.forEach(h => console.error('   ' + h));
+    console.error('\nUpdate these to the current price, or change RETIRED_PRICE_TOKENS if a price was un-retired.');
+  }
+  if (flowErrors.length) {
+    console.error((hits.length ? '\n' : '') + '❌ Flow guard FAILED — the customer approve path is at risk:\n');
+    flowErrors.forEach(e => console.error('   ' + e + '\n'));
+    console.error('See the "VERIFY BEFORE YOU TOUCH IT" standing rule in the Project Handbook.');
+  }
   process.exit(1);
 }
 
 console.log('✅ Content guard passed — no retired price tokens in ' + files.length + ' files.');
+console.log('✅ Flow guard passed — customers can still read + approve their book (draft_ready path intact).');
 process.exit(0);
