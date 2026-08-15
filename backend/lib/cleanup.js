@@ -234,9 +234,22 @@ async function runCleanupPipeline(customerId) {
     const bookName = customer.is_couple
       ? ((customer.name || '') + (customer.partner_name ? ' & ' + customer.partner_name : ''))
       : customer.name;
-    const memoirMarkdown = customer.is_couple
+    let memoirMarkdown = customer.is_couple
       ? await polishCoupleWithClaude(customer.name, customer.partner_name, combined, photos, answeredQA)
       : await polishWithClaude(customer.name, combined, photos, answeredQA);
+
+    // 3b. QUALITY PASS — strict AI proofread that removes obvious mechanical
+    //     errors (duplicated passages, repeated photo markers, cut-off text, an
+    //     inconsistently spelled name) BEFORE the customer ever sees the draft.
+    //     Conservative: never rewrites or changes facts. NON-FATAL — any failure
+    //     (or a suspiciously short result) keeps the original memoir, so a
+    //     proofreader hiccup can never gut or block a book.
+    try {
+      memoirMarkdown = await qualityPassWithClaude(memoirMarkdown);
+      console.log('[cleanup] quality pass complete for ' + customer.name);
+    } catch (e) {
+      console.error('[cleanup] quality pass skipped (kept original memoir): ' + e.message);
+    }
 
     // 4. Render to .docx (with photos placed inline)
     console.log('[cleanup] Rendering .docx');
@@ -468,6 +481,57 @@ async function polishWithClaude(customerName, combinedTranscripts, photos, answe
   if (!resp.ok) throw new Error('Claude API error: ' + await resp.text());
   const text = await readClaudeStream(resp);
   return text.trim();
+}
+
+// ----------------------------------------------------------------------------
+// QUALITY PASS — a conservative AI proofread of the finished memoir, run BEFORE
+// it ever reaches the customer. Fixes only obvious mechanical mistakes; never
+// rewrites, restyles, or changes a fact. Streams (large output) like the memoir
+// writer, so a big book can't hit the ~5-min headers timeout.
+// ----------------------------------------------------------------------------
+const QUALITY_PASS_SYSTEM_PROMPT = [
+"You are a careful proofreader for a senior's finished memoir. You will receive the full memoir in Markdown. Your ONLY job is to fix OBVIOUS mechanical mistakes that slipped in, then return the WHOLE memoir again, otherwise completely unchanged.",
+"",
+"FIX these when they clearly occur:",
+"- Duplicated content: the same story, paragraph, or sentence repeated. Keep the first, fullest occurrence and remove the near-exact repeat.",
+"- A photo marker [[PHOTO:N]] that appears more than once for the same number N: keep the first, remove the duplicate(s).",
+"- Text obviously cut off mid-sentence or mid-word, an accidentally doubled word (\"the the\"), or a stray leftover instruction/label that is clearly not part of the story.",
+"- The SAME person's name spelled inconsistently: normalize it to the spelling used most often. Names only.",
+"",
+"NEVER do any of these:",
+"- Do NOT rewrite, restyle, shorten, expand, reorder, re-title, or 'improve' anything. Every word you are not fixing must stay EXACTLY as it is, in the storyteller's own voice.",
+"- Do NOT invent, add, or alter any fact, name, date, place, or detail.",
+"- Do NOT resolve a contradiction by guessing. If two different dates or facts are given for the same thing, LEAVE BOTH exactly as they are — only the storyteller knows which is right.",
+"- Keep every [[PHOTO:N]] marker line exactly where it is (except a true duplicate of the same N), and keep all headings and chapter titles exactly.",
+"",
+"If there is nothing obvious to fix, return the memoir completely unchanged. Return ONLY the full memoir in Markdown — no preamble, no notes, no explanation.",
+].join("\n");
+
+async function qualityPassWithClaude(memoirMarkdown) {
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 16000,
+      stream: true,
+      system: QUALITY_PASS_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: 'Here is the memoir to proofread:\n\n' + memoirMarkdown }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude API error (quality pass): ' + await resp.text());
+  const cleaned = (await readClaudeStream(resp)).trim();
+  // Safety net: never let the proofread deliver a gutted/truncated memoir. If it
+  // comes back far shorter than the original, treat it as a failure so the
+  // caller's try/catch keeps the original memoir untouched.
+  if (!cleaned || cleaned.length < memoirMarkdown.length * 0.6) {
+    throw new Error('quality-pass output too short (' + (cleaned ? cleaned.length : 0) + ' vs ' + memoirMarkdown.length + ')');
+  }
+  return cleaned;
 }
 
 // ----------------------------------------------------------------------------
@@ -1392,6 +1456,7 @@ module.exports = {
   MEMOIR_SYSTEM_PROMPT,
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data
+  qualityPassWithClaude, // exported so we can iterate/test the proofread pass
   applyRevision,    // voice-revision: apply one spoken change
   runRevisionAsync, // voice-revision: async orchestrator
   loadCustomerPhotos,
