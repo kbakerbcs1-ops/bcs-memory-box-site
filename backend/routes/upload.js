@@ -7,6 +7,7 @@ const multer = require('multer');
 const db = require('../lib/db');
 const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
+const { transcribeRecordingInBackground } = require('../lib/cleanup');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Missing access token' });
 
     const customer = await db.queryOne(
-      'SELECT id, status, paid_at, name, email FROM customers WHERE access_token = $1',
+      'SELECT id, status, paid_at, name, email, is_couple FROM customers WHERE access_token = $1',
       [token]
     );
     if (!customer) return res.status(404).json({ error: 'Account not found' });
@@ -80,6 +81,15 @@ router.post('/', upload.single('audio'), async (req, res) => {
         );
       } catch (e) { console.error('[upload] could not link follow-up answer: ' + e.message); }
     }
+
+    // PHASE 3: transcribe this clip in the BACKGROUND right now (fire-and-forget,
+    // non-fatal) so the storyteller's transcripts are ready by their very next
+    // visit — the recording page can then greet them with a personalized "picking
+    // up where you left off" question on their FIRST return, not the second. If it
+    // fails, the finish pipeline re-transcribes anything not 'completed', so
+    // nothing is ever lost, and the upload response is never affected.
+    transcribeRecordingInBackground({ id: recording.id, storage_key: storageKey }, customer.is_couple)
+      .catch(function (e) { console.error('[upload] background transcription error (non-fatal): ' + (e && e.message)); });
 
     // First recording for this customer → tell Ken they've started (once).
     // Non-fatal: a mail failure must never fail the upload.
