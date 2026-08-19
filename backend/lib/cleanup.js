@@ -900,7 +900,8 @@ async function sendEmail(to, subject, html) {
       from: to === 'kbakerbcs1@gmail.com'
         ? 'Bullet <ops@bcsmemorybox.com>'
         : 'BCS Memory Box <ops@bcsmemorybox.com>',
-      to: to,
+      // Admin/"Bullet" alerts also go to Kelly (partner); customer mail is unaffected.
+      to: to === 'kbakerbcs1@gmail.com' ? ['kbakerbcs1@gmail.com', 'kelly.wrightn@yahoo.com'] : to,
       reply_to: to === 'kbakerbcs1@gmail.com' ? 'kbakerbcs1@gmail.com' : 'hello@bcsmemorybox.com',
       subject: subject,
       html: html,
