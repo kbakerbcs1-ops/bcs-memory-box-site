@@ -491,7 +491,12 @@
 <header class="hero">
     <div class="hero-side">
         <img class="hero-logo" src="bcs-logo.png" alt="BCS Memory Box logo">
-        <a href="#" class="hero-video-card" onclick="openVideo();return false;" aria-label="Watch the How It Works video">
+        <a href="#" class="hero-video-card" onclick="openVideo('founder');return false;" aria-label="Watch a message from Ken, our founder">
+            <div class="hero-video-thumb"><img src="founder-thumb.jpg" alt="A message from Ken, founder of BCS Memory Box"><span class="playbtn"></span></div>
+            <div class="vcap">&#9654; A message from Ken</div>
+            <div class="vsub">Founder, BCS Memory Box</div>
+        </a>
+        <a href="#" class="hero-video-card" onclick="openVideo('how');return false;" aria-label="Watch the How It Works video" style="margin-top:14px;">
             <div class="hero-video-thumb"><img src="tutorial-thumb.jpg" alt="How It Works video"><span class="playbtn"></span></div>
             <div class="vcap">&#9654; Watch: How It Works</div>
         </a>
@@ -1107,11 +1112,11 @@
 <div id="video-modal" class="video-modal" onclick="closeVideo()">
   <div class="video-modal-inner" onclick="event.stopPropagation()">
     <button class="video-close" onclick="closeVideo()" aria-label="Close">&times;</button>
-    <video id="tutorial-video" src="tutorial-video.mp4" controls playsinline preload="none" poster="tutorial-thumb.jpg"></video>
+    <video id="tutorial-video" controls playsinline preload="none"></video>
   </div>
 </div>
 <script>
-function openVideo(){var m=document.getElementById('video-modal');m.classList.add('open');var v=document.getElementById('tutorial-video');try{v.currentTime=0;v.play();}catch(e){}}
+function openVideo(which){var m=document.getElementById('video-modal');var v=document.getElementById('tutorial-video');if(which==='how'){v.src='tutorial-video.mp4';v.poster='tutorial-thumb.jpg';}else{v.src='founder-hero.mp4';v.poster='founder-thumb.jpg';}m.classList.add('open');try{v.currentTime=0;v.play();}catch(e){}}
 function closeVideo(){var m=document.getElementById('video-modal');m.classList.remove('open');var v=document.getElementById('tutorial-video');try{v.pause();}catch(e){}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeVideo();});
 </script>
