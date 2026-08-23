@@ -49,7 +49,16 @@ async function sweepPrintJobs() {
        FROM print_jobs p
        LEFT JOIN customers c ON c.id = p.customer_id
       WHERE p.lulu_print_job_id IS NOT NULL
-        AND (p.last_lulu_status IS NULL OR p.last_lulu_status NOT IN ('SHIPPED','REJECTED','CANCELED'))`
+        AND (
+              -- still in flight: keep asking Lulu what happened
+              p.last_lulu_status IS NULL
+              OR p.last_lulu_status NOT IN ('SHIPPED','REJECTED','CANCELED')
+              -- OR already failed at Lulu but never flagged on our side. Without
+              -- this, a job that reached a bad state BEFORE this watchdog existed
+              -- (or was refreshed by hand) is invisible forever. Once we flag it,
+              -- status='error' and it drops out, so Ken is emailed exactly once.
+              OR (p.last_lulu_status IN ('REJECTED','CANCELED') AND p.status <> 'error')
+            )`
   );
   const jobs = rows || [];
   let failed = 0;
