@@ -58,6 +58,11 @@ async function sweepPrintJobs() {
               -- (or was refreshed by hand) is invisible forever. Once we flag it,
               -- status='error' and it drops out, so Ken is emailed exactly once.
               OR (p.last_lulu_status IN ('REJECTED','CANCELED') AND p.status <> 'error')
+              -- OR shipped but the customer has not been told yet. Lulu does not
+              -- reliably email API-placed orders (it sent nothing at all when
+              -- Kelly's was rejected), so the "your book is on its way" email is
+              -- OURS to send. Once sent we set status='shipped' and it drops out.
+              OR (p.last_lulu_status = 'SHIPPED' AND p.status <> 'shipped')
             )`
   );
   const jobs = rows || [];
@@ -92,6 +97,47 @@ async function sweepPrintJobs() {
         WHERE id = $1`,
       [job.id, status, tracking, !!isBad, isBad ? reasonFromJob(remote) : null]
     );
+
+    // --- Shipped: tell the CUSTOMER, and copy Ken. ---
+    const isShipped = status && String(status).toUpperCase() === 'SHIPPED';
+    if (isShipped && job.status !== 'shipped') {
+      const who = job.customer_name || 'there';
+      const firstName = String(who).trim().split(/\s+/)[0];
+      const track = tracking
+        ? '<p style="margin:22px 0;"><a href="' + mailer.escapeHtml(tracking) + '" ' +
+          'style="background:#ebdbbc;color:#2a1f15;font-weight:700;padding:14px 28px;border-radius:999px;text-decoration:none;">Track your book</a></p>'
+        : '<p>Tracking information should appear shortly.</p>';
+      if (job.customer_email) {
+        try {
+          await mailer.sendEmail(job.customer_email,
+            'Your book is on its way',
+            '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.7;color:#2a2520;">' +
+            '<h2 style="color:#8B1A2B;font-size:24px;">Your book has been printed and shipped.</h2>' +
+            '<p>' + mailer.escapeHtml(firstName) + ', your hardcover is finished and on its way to you.</p>' +
+            track +
+            '<p>When it arrives, open the front cover — the QR code inside plays your story in your own voice.</p>' +
+            '<p style="margin-top:26px;">Thank you for trusting me with it.</p>' +
+            '<p style="font-style:italic;color:#6b5d4f;">— Ken, founder<br>BCS Memory Box</p>' +
+            '</div>');
+          console.log('[printwatch] told ' + job.customer_email + ' their book shipped');
+        } catch (mailErr) {
+          console.error('[printwatch] could not email customer about shipping: ' + mailErr.message);
+        }
+      } else {
+        console.error('[printwatch] job ' + job.lulu_print_job_id + ' shipped but we have no customer email on file');
+      }
+      try {
+        await mailer.sendEmail(mailer.ADMIN_EMAIL,
+          'Shipped: ' + who + "'s book is on its way",
+          '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+          '<p><strong>' + mailer.escapeHtml(who) + '</strong> (' + mailer.escapeHtml(job.customer_email || 'no email on file') + ') ' +
+          'has been told their book shipped.</p>' +
+          '<p>Lulu print job ' + mailer.escapeHtml(String(job.lulu_print_job_id)) + '<br>' +
+          'Tracking: ' + (tracking ? mailer.escapeHtml(tracking) : 'not provided yet') + '</p>' +
+          '</div>');
+      } catch (_) { /* Ken's copy is a nicety; never block on it */ }
+      await db.query(`UPDATE print_jobs SET status='shipped', updated_at=NOW() WHERE id=$1`, [job.id]);
+    }
 
     if (isBad && !alreadyFlagged) {
       failed++;
