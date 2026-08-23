@@ -17,6 +17,7 @@ const finishRoutes   = require('./routes/finish');
 const voiceRoutes    = require('./routes/voice');
 const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
+const printWatch     = require('./lib/printWatch');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat } = require('./lib/cleanup');
 const reminders = require('./lib/reminders');
@@ -384,6 +385,21 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     setInterval(function () {
       checkStuckCustomers().catch(function (e) { console.error('[reaper] tick failed:', e.message); });
     }, 10 * 60 * 1000);
+
+    // Print-job watchdog: a job that was SUBMITTED is not a job that is PRINTING.
+    // Lulu can reject one within seconds (Kelly Wright, Aug 14 2026 — rejected in
+    // six, and nobody knew for nine days). Re-ask Lulu about every open job and
+    // email Ken the moment one has failed. Runs shortly after boot, then hourly.
+    setTimeout(function () {
+      printWatch.sweepPrintJobs().then(function (r) {
+        console.log('[printwatch] boot sweep: ' + r.checked + ' open job(s) checked, ' + (r.failed || 0) + ' failed');
+      }).catch(function (e) { console.error('[printwatch] boot sweep failed:', e.message); });
+    }, 45 * 1000);
+    setInterval(function () {
+      printWatch.sweepPrintJobs().then(function (r) {
+        if (r.checked) console.log('[printwatch] sweep: ' + r.checked + ' open job(s) checked, ' + (r.failed || 0) + ' failed');
+      }).catch(function (e) { console.error('[printwatch] tick failed:', e.message); });
+    }, 60 * 60 * 1000);
 
     // Daily heartbeat / dead-man's-switch: a "still alive + quick status" email so
     // that if the alert channel (or the whole service) ever breaks, its ABSENCE is

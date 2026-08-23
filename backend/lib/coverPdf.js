@@ -8,9 +8,18 @@
 //   trim              = 8.5 x 11 in
 //   wrap + bleed      = 0.875 in on every outer side  (→ height is ALWAYS 12.75)
 //   cover width       = 2*8.5 + spine + 2*0.875 = 18.75 + spine
-//   spine (in)        = page_count / 136   (anchor: 34/136 = 0.25 in), min 0.0625
-// The spine can be overridden with an exact value from Lulu's cover-dimensions
-// API; the formula is the offline fallback.
+//   spine (in)        = STEPPED, from Lulu's own cover-dimensions API (below)
+//
+// The spine is NOT linear in page count. Measured from Lulu on 2026-08-22 for
+// this package (0850X1100FCPRECW080CW444MXX): 24/50/66/80 pages -> 0.250 in;
+// 90/100/110/120 -> 0.500; 150 -> 0.625; 200 -> 0.750; 300 -> 0.944; 500 -> 1.375.
+// The previous formula (page_count / 136) assumed a straight line from zero and
+// produced 0.486 in for a 66-page book, when Lulu required 0.250 in. That is
+// what got Kelly Wright's first real order REJECTED on 2026-08-14.
+//
+// Callers that are about to ORDER must pass spineWidthIn from
+// lulu.calculateCoverDimensions() — this table is only an offline fallback for
+// preview covers, and the bands between measured points are approximate.
 //
 // Returns { buffer, widthIn, heightIn, spineIn }.
 // ============================================================================
@@ -28,12 +37,20 @@ const CREAM = '#F4E8CE';
 const TRIM_W = 8.5, TRIM_H = 11;
 const WRAP = 0.875;                 // wrap + bleed per outer side
 const COVER_H = TRIM_H + 2 * WRAP;  // 12.75 in, constant
-const PPI_SPINE = 136;              // pages per inch of spine (from the real proof)
+// Measured spine bands (pages -> spine inches), from Lulu's cover-dimensions API.
+const SPINE_BANDS = [
+  [80, 0.250], [120, 0.500], [150, 0.625], [200, 0.750], [300, 0.944], [500, 1.375],
+];
+const SPINE_SLOPE_ABOVE_500 = (1.375 - 0.944) / 200; // in per page, extrapolated
 
 const IN = (v) => v * 72;          // inches → points
 
 function spineForPages(pageCount) {
-  return Math.max(0.0625, (pageCount || 24) / PPI_SPINE);
+  const pages = Math.max(1, Number(pageCount) || 24);
+  for (let i = 0; i < SPINE_BANDS.length; i++) {
+    if (pages <= SPINE_BANDS[i][0]) return SPINE_BANDS[i][1];
+  }
+  return 1.375 + (pages - 500) * SPINE_SLOPE_ABOVE_500;
 }
 
 function renderCoverPdf(opts) {

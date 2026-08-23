@@ -22,6 +22,7 @@ const lulu = require('./lulu');
 const coverPdf = require('./coverPdf');
 const storage = require('./storage');
 const pricing = require('./pricing');
+const mailer = require('./mailer');
 
 // Plans that include a physical hardcover book (single source of truth).
 const HARDCOVER_PLANS = pricing.HARDCOVER_PLANS;
@@ -140,22 +141,58 @@ async function autoOrderOnApproval(customer, draft) {
       return { ordered: false, reason: 'cost_anomaly', total, currency };
     }
 
-    // --- Refine the cover to Lulu's EXACT spine for this page count ---
-    // (belt-and-suspenders on top of the validated offline formula).
+    // --- Size the cover to Lulu's EXACT dimensions for this page count ---
+    // This is REQUIRED, not a refinement. Lulu rejects a cover whose width is
+    // off by more than ~1/16 in, and the offline formula in coverPdf.js is only
+    // a rough fallback: it assumes the spine grows linearly with page count,
+    // which is wrong for this hardcover package (Lulu wants 19.00 in flat up to
+    // ~100 pages). On Aug 14, 2026 that mismatch produced a 19.236 in cover for
+    // Kelly Wright's 66-page memoir; Lulu REJECTED it six seconds later and the
+    // old code swallowed the failure and ordered anyway. So: if we cannot get
+    // the real dimensions, we do NOT place the order.
     try {
       const dims = await lulu.calculateCoverDimensions({
-        podPackageId: lulu.DEFAULT_POD_PACKAGE_ID, pageCount: assets.page_count, unit: 'in',
+        podPackageId: lulu.DEFAULT_POD_PACKAGE_ID, pageCount: assets.page_count,
       });
-      const widthIn = Number(dims && dims.width);
-      const spineIn = widthIn - 18.75; // 2*8.5 trim + 2*0.875 wrap/bleed
-      if (spineIn > 0.05) {
-        const cov = await coverPdf.renderCoverPdf({ name: customer.name, pageCount: assets.page_count, spineWidthIn: spineIn });
-        const coverKey = 'customers/' + customer.id + '/print/cover-exact-' + externalId + '.pdf';
-        await storage.uploadObject(coverKey, cov.buffer, 'application/pdf');
-        await db.query('UPDATE drafts SET cover_pdf_key = $2 WHERE id = $1', [draft.id, coverKey]);
+      const spineIn = dims.widthIn - 18.75; // 2*8.5 trim + 2*0.875 wrap/bleed
+      if (!(spineIn > 0.05)) {
+        throw new Error('implausible spine ' + spineIn.toFixed(3) + ' in from width ' + dims.widthIn);
       }
+      const cov = await coverPdf.renderCoverPdf({
+        name: customer.name, pageCount: assets.page_count, spineWidthIn: spineIn,
+      });
+      // Belt and braces: confirm what we actually rendered matches Lulu, before
+      // we hand them the file. A silent 1/4 in drift is what cost us nine days.
+      const driftIn = Math.abs(cov.widthIn - dims.widthIn);
+      if (driftIn > 0.01) {
+        throw new Error('rendered cover ' + cov.widthIn.toFixed(3) + ' in but Lulu requires '
+          + dims.widthIn.toFixed(3) + ' in (drift ' + driftIn.toFixed(3) + ' in)');
+      }
+      const coverKey = 'customers/' + customer.id + '/print/cover-exact-' + externalId + '.pdf';
+      await storage.uploadObject(coverKey, cov.buffer, 'application/pdf');
+      await db.query('UPDATE drafts SET cover_pdf_key = $2 WHERE id = $1', [draft.id, coverKey]);
+      console.log('[autoOrder] cover sized to Lulu spec: ' + dims.widthIn.toFixed(3)
+        + ' x ' + dims.heightIn.toFixed(3) + ' in (' + assets.page_count + ' pages)');
     } catch (e) {
-      console.error('[autoOrder] cover-dimension refine skipped (using generated cover): ' + e.message);
+      console.error('[autoOrder] ABORTING — could not size cover to Lulu spec: ' + e.message);
+      await db.query(
+        `UPDATE print_jobs SET status='error', error=$2, updated_at=NOW() WHERE id=$1`,
+        [jobRowId, 'cover sizing failed: ' + e.message]
+      );
+      try {
+        await mailer.sendEmail(mailer.ADMIN_EMAIL,
+          'Print order held back — cover size could not be confirmed',
+          '<div style="font-family:Georgia,serif;max-width:600px;line-height:1.6;color:#2a2520;">' +
+          '<h2 style="color:#8B1A2B;">A book was NOT sent to the printer</h2>' +
+          '<p><strong>' + mailer.escapeHtml(customer.name || customer.email) + '</strong> approved their book, ' +
+          'but we could not confirm the exact cover size with Lulu, so the order was held rather than risk a rejection.</p>' +
+          '<p style="font-size:14px;color:#5a534c;">Reason: ' + mailer.escapeHtml(e.message) + '</p>' +
+          '<p>Nothing was charged. Fix the cause, then use <strong>Retry print</strong> on their customer page.</p>' +
+          '</div>');
+      } catch (mailErr) {
+        console.error('[autoOrder] could not email Ken about held order: ' + mailErr.message);
+      }
+      return { ordered: false, reason: 'cover_dimensions_unavailable', error: e.message };
     }
 
     // TEST MODE (default): everything above validated against Lulu for real
