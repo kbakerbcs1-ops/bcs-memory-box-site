@@ -427,7 +427,15 @@ router.get('/recording/:id/download', allowAdminOrSig('recording'), async (req, 
     const { stream, contentType, contentLength } = await storage.getObjectStream(recording.storage_key);
     res.setHeader('Content-Type', contentType || 'application/octet-stream');
     if (contentLength) res.setHeader('Content-Length', contentLength);
-    res.setHeader('Content-Disposition', 'attachment; filename="' + (recording.original_filename || 'recording') + '"');
+    // HTTP headers are Latin-1 only. Our guided recordings are named things like
+    // "Warm-up — name and hometown.m4a" (em dash), and Node THROWS on that, which
+    // killed the response and surfaced as a 502 — i.e. Ken could not download or
+    // listen to ANY guided recording from the dashboard. Send a sanitised ASCII
+    // filename plus the real UTF-8 one via RFC 5987.
+    const rawName = recording.original_filename || 'recording';
+    const asciiName = rawName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '');
+    res.setHeader('Content-Disposition',
+      'attachment; filename="' + asciiName + '"; filename*=UTF-8\'\'' + encodeURIComponent(rawName));
     stream.pipe(res);
   } catch (err) {
     console.error('[admin/recording/download] error:', err);
