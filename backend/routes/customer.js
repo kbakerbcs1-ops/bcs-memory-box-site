@@ -5,11 +5,12 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
-const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync, transcribeRecordingInBackground, generateNextQuestion } = require('../lib/cleanup');
+const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync, transcribeRecordingInBackground, generateNextQuestion, generateInSessionFollowUp } = require('../lib/cleanup');
 // In-memory cache of the personalized "next question" per customer, keyed on how
 // many of their recordings are transcribed — so we only call the AI when that
 // grows, not on every page load. Lost on restart (just regenerates); no DB needed.
 const _nextQCache = new Map();
+const _followUpCache = new Map(); // recording id -> question|null (one AI call per clip)
 const printOrder = require('../lib/printOrder');
 const lulu = require('../lib/lulu');
 const pricing = require('../lib/pricing');
@@ -219,6 +220,63 @@ router.get('/me', async (req, res) => {
 
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET /api/customer/follow-up?token=<access_token>
+// The IN-SESSION follow-up. They have JUST finished a recording and are still
+// sitting there. Looks only at their newest clip and asks the one question that
+// opens it wider — the thing a human interviewer would say next.
+//
+// WHY THIS EXISTS: on Aug 23 2026 Mike Emes recorded "My wife changed my life.
+// That was the moment. Yeah." — nine seconds — and stopped. Nothing in the
+// product asked him to go on. Measured end to end, transcript + question takes
+// about 7 seconds, so it can happen while he is still in the chair.
+//
+// Returns {ready:false} while the transcript is still coming (the client polls),
+// {ready:true, question} when there is one, and {ready:true, question:null} when
+// the answer was too thin to follow. NEVER an error the page has to handle — a
+// failure here must silently leave the curated question in place.
+// ---------------------------------------------------------------------------
+router.get('/follow-up', async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.json({ ready: true, question: null });
+    const customer = await db.queryOne(
+      'SELECT id, name, is_couple FROM customers WHERE access_token = $1', [token]);
+    if (!customer) return res.json({ ready: true, question: null });
+
+    const latest = await db.queryOne(
+      `SELECT id, storage_key, transcript, transcript_status
+         FROM recordings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`, [customer.id]);
+    if (!latest) return res.json({ ready: true, question: null });
+
+    const cached = _followUpCache.get(latest.id);
+    if (cached !== undefined) return res.json({ ready: true, question: cached });
+
+    if (latest.transcript_status === 'error') return res.json({ ready: true, question: null });
+    if (!(latest.transcript && latest.transcript_status === 'completed')) {
+      if (latest.transcript_status !== 'transcribing') {
+        transcribeRecordingInBackground(latest, customer.is_couple);
+      }
+      return res.json({ ready: false });
+    }
+
+    // Too thin to build on — don't spend a call, don't nag them.
+    if (String(latest.transcript).trim().split(/\s+/).length < 4) {
+      _followUpCache.set(latest.id, null);
+      return res.json({ ready: true, question: null });
+    }
+
+    let question = null;
+    try { question = await generateInSessionFollowUp(latest.transcript, customer.name); }
+    catch (e) { console.error('[follow-up] generation failed: ' + e.message); }
+    _followUpCache.set(latest.id, question || null);
+    res.json({ ready: true, question: question || null });
+  } catch (err) {
+    console.error('[follow-up] error:', err);
+    res.json({ ready: true, question: null });
+  }
+});
+
 // GET /api/customer/next-question?token=<access_token>
 // A personalized "picking up where you left off" question for the recording
 // page, built from what the storyteller has already recorded. Progressive

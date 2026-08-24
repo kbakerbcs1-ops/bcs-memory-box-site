@@ -1211,6 +1211,48 @@ async function generateFollowUpQuestions(combinedTranscripts, draftMarkdown) {
 // thing to talk about, built from what the storyteller has already recorded.
 // Used by the /api/customer/next-question progressive-enhancement endpoint.
 // ---------------------------------------------------------------------------
+// The IN-SESSION follow-up: they have just this second finished speaking and are
+// still sitting there. Unlike NEXT_QUESTION (which moves them to new ground on a
+// later visit), this one goes DEEPER into what they just said, immediately.
+// Why: Mike Emes recorded "My wife changed my life. That was the moment. Yeah."
+// and stopped after 9 seconds, because nothing asked him to go on.
+const FOLLOW_UP_SYSTEM_PROMPT = [
+"A senior has just finished recording a short answer and is still sitting at the microphone. Your job is to ask the ONE question a warm, curious interviewer would ask NEXT - the question that opens the door wider on what they just said.",
+"RULES:",
+"- ONE question only. No preamble, no quotation marks, no lists. Output only the question itself.",
+"- It must clearly follow from THEIR OWN WORDS in the latest answer - name the person, place, or thing they just mentioned.",
+"- Go DEEPER, do not change the subject. If they named someone, ask about that someone. If they named a place, ask what happened there.",
+"- Ask for a scene, not a summary: a day, a moment, what was said, what it looked like. Never 'tell me more about that'.",
+"- Warm, plain, grandparent-friendly. One sentence.",
+"- Never invent facts about them or assume details they did not say.",
+"- If their answer is too thin to follow (a single word, silence, or a false start), return exactly: SKIP",
+].join('\n');
+
+async function generateInSessionFollowUp(latestTranscript, name) {
+  const userMsg = 'The storyteller' + (name ? ' (' + name + ')' : '') +
+    ' just said:\n\n"' + String(latestTranscript || '').trim() + '"\n\n----\n\nAsk the ONE question that opens this up.';
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 150,
+      system: FOLLOW_UP_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude API error (follow-up): ' + await resp.text());
+  const data = await resp.json();
+  const text = (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
+  const cleaned = text.replace(/^["'\s]*(?:[-*\u2022]|\d+[.)])?\s*/, '').replace(/\s*["']\s*$/, '').trim();
+  if (!cleaned || /^SKIP$/i.test(cleaned)) return null;
+  return cleaned;
+}
+
 const NEXT_QUESTION_SYSTEM_PROMPT = [
 "You help a senior tell their life story by suggesting the SINGLE next thing to talk about. You will receive transcripts of the stories they have already recorded.",
 "Return ONE short, warm, specific question that invites a NEW story they have not told yet, or gently draws out more about a person, place, or moment they only touched on. It should feel like a caring interviewer who actually listened and asks the natural next question.",
@@ -1447,6 +1489,7 @@ module.exports = {
   runCleanupPipeline,
   generateFollowUpQuestions,
   generateNextQuestion,
+  generateInSessionFollowUp,
   transcribeRecordingInBackground,
   transcribeFromR2,
   emailAdminDraftReady,

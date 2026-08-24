@@ -1146,14 +1146,76 @@ function renderErrorState(customer) {
     '</div>';
 }
 
+// After a recording saves, ask the server for a follow-up to what they JUST said,
+// then carry it across the reload. Measured end to end at ~7s (transcribe ~4s +
+// question ~2.5s), so we show an honest "thinking" line rather than a spinner —
+// a visible pause that produces a personal question reads as being listened to.
+// Capped at 2 in a row so it never becomes an interrogation, and ALWAYS falls
+// back to the plain reload on timeout or error.
+function bcsFollowUpThenReload(statusEl, token) {
+  var chain = 0;
+  try { chain = parseInt(sessionStorage.getItem('bcs_fu_chain') || '0', 10) || 0; } catch (e) {}
+  if (chain >= 2) {
+    try { sessionStorage.setItem('bcs_fu_chain', '0'); } catch (e2) {}
+    setTimeout(function(){ window.location.reload(); }, 3000);
+    return;
+  }
+  try {
+    var thinking = document.createElement('div');
+    thinking.style.cssText = 'margin-top:12px;color:#6b5d4f;font-size:16px;font-style:italic;';
+    thinking.textContent = 'Let me think about what you just told me\u2026';
+    statusEl.appendChild(thinking);
+  } catch (e3) {}
+
+  var started = Date.now();
+  (function poll() {
+    if (Date.now() - started > 16000) { window.location.reload(); return; }
+    fetch(API_BASE + '/api/customer/follow-up?token=' + encodeURIComponent(token))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d || d.ready !== true) { setTimeout(poll, 1500); return; }
+        try {
+          if (d.question) {
+            sessionStorage.setItem('bcs_followup', d.question);
+            sessionStorage.setItem('bcs_fu_chain', String(chain + 1));
+          } else {
+            sessionStorage.setItem('bcs_fu_chain', '0');
+          }
+        } catch (e4) {}
+        window.location.reload();
+      })
+      .catch(function() { setTimeout(poll, 2000); });
+  })();
+}
+
 // Wire the leading "suggested question" card: cycle to another question, and
 // let "Record your answer" scroll to the recorder and start it (reusing the
 // existing recorder — no second recording implementation).
 function bindSuggestedQuestion() {
   var _sqUserPicked = false;
+
+  // If the last recording produced an in-session follow-up, it was stashed just
+  // before the reload — show it now, in place of the curated question. This is
+  // the moment the product actually answers the person: they said something,
+  // and the very next thing they see is a question about it.
+  try {
+    var _fu = sessionStorage.getItem('bcs_followup');
+    if (_fu) {
+      sessionStorage.removeItem('bcs_followup');
+      var _fuEl = document.getElementById('sq-text');
+      if (_fuEl) {
+        _fuEl.textContent = _fu;
+        var _fuEb = document.getElementById('sq-eyebrow');
+        if (_fuEb) _fuEb.textContent = 'Because of what you just told me';
+        _sqUserPicked = true; // don't let the generic question overwrite it
+      }
+    }
+  } catch (e) {}
+
   var another = document.getElementById('sq-another');
   if (another) another.addEventListener('click', function() {
     _sqUserPicked = true;
+    try { sessionStorage.setItem('bcs_fu_chain', '0'); } catch (e2) {} // they chose a new thread
     var el = document.getElementById('sq-text');
     if (el) el.textContent = pickQuestion();
   });
@@ -1520,7 +1582,7 @@ function bindRecordHandler() {
         isUploading = false;
         statusEl.innerHTML = SAVED_SAFE_HTML;
         statusEl.style.color = '#2a5a2a';
-        setTimeout(function(){ window.location.reload(); }, 4000);
+        bcsFollowUpThenReload(statusEl, token);
         return;
       } catch (err) {
         clearTimeout(to);
