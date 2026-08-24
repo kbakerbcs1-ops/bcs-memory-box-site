@@ -1208,6 +1208,27 @@ function bindSuggestedQuestion() {
         var _fuEb = document.getElementById('sq-eyebrow');
         if (_fuEb) _fuEb.textContent = 'Because of what you just told me';
         _sqUserPicked = true; // don't let the generic question overwrite it
+
+        // BRING IT TO THEM. The question card sits at the top of the page, but a
+        // person who has just recorded is at the BOTTOM, in the recorder — and a
+        // reload puts them back roughly where they were. Ken tested this on
+        // himself (Aug 24) and reported "nothing came back": the follow-up had
+        // arrived perfectly, off-screen. An answer nobody sees is not an answer.
+        setTimeout(function() {
+          try {
+            var card = _fuEl.closest ? _fuEl.closest('.card') : null;
+            (card || _fuEl).scrollIntoView({ behavior: 'smooth', block: 'center' });
+            var flash = card || _fuEl;
+            var prevBg = flash.style.backgroundColor;
+            var prevTr = flash.style.transition;
+            flash.style.transition = 'background-color .5s ease';
+            flash.style.backgroundColor = '#fdf6e3';
+            setTimeout(function() {
+              flash.style.backgroundColor = prevBg || '';
+              setTimeout(function(){ flash.style.transition = prevTr || ''; }, 600);
+            }, 1400);
+          } catch (e5) {}
+        }, 250);
       }
     }
   } catch (e) {}
