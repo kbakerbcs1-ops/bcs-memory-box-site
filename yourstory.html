@@ -1214,19 +1214,36 @@ function bindSuggestedQuestion() {
         // reload puts them back roughly where they were. Ken tested this on
         // himself (Aug 24) and reported "nothing came back": the follow-up had
         // arrived perfectly, off-screen. An answer nobody sees is not an answer.
+        //
+        // Two cues, chosen together: a PERMANENT box (cream with a maroon edge,
+        // in the brand's own colours — not a blue system-alert box) so the
+        // follow-up is always visually distinct, plus a SINGLE slow highlight on
+        // the two lines marking the moment it arrives. Deliberately not blinking:
+        // you cannot read blinking text, and it stops being noticed — and starts
+        // being irritating — by the tenth recording.
         setTimeout(function() {
           try {
             var card = _fuEl.closest ? _fuEl.closest('.card') : null;
+            if (card) {
+              card.style.background = '#fdf6e3';
+              card.style.border = '1px solid #e6d9c8';
+              card.style.borderLeft = '6px solid #8B1A2B';
+            }
+            if (_fuEb) _fuEb.style.color = '#8B1A2B';
             (card || _fuEl).scrollIntoView({ behavior: 'smooth', block: 'center' });
-            var flash = card || _fuEl;
-            var prevBg = flash.style.backgroundColor;
-            var prevTr = flash.style.transition;
-            flash.style.transition = 'background-color .5s ease';
-            flash.style.backgroundColor = '#fdf6e3';
+
+            [_fuEb, _fuEl].forEach(function (el) {
+              if (!el) return;
+              el.style.borderRadius = '4px';
+              el.style.padding = '2px 6px';
+              el.style.transition = 'background-color .6s ease';
+              el.style.backgroundColor = '#ffe9a8';
+            });
             setTimeout(function() {
-              flash.style.backgroundColor = prevBg || '';
-              setTimeout(function(){ flash.style.transition = prevTr || ''; }, 600);
-            }, 1400);
+              [_fuEb, _fuEl].forEach(function (el) {
+                if (el) el.style.backgroundColor = 'transparent';
+              });
+            }, 1800);
           } catch (e5) {}
         }, 250);
       }
