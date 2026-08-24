@@ -251,6 +251,26 @@ async function runCleanupPipeline(customerId) {
       console.error('[cleanup] quality pass skipped (kept original memoir): ' + e.message);
     }
 
+    // 3c. TRUTH PASS — check every sentence against what they actually said and
+    //     DELETE anything invented. The writer fills in warm, plausible meaning
+    //     when someone has recorded very little, which is exactly the case for
+    //     every new customer (see truthPassWithClaude). Removal only, never a
+    //     rewrite. NON-FATAL and never gutting: any failure, or a result that
+    //     wants to cut more than a third of the book, keeps the original.
+    try {
+      const truth = await truthPassWithClaude(memoirMarkdown, combined);
+      if (truth.removed.length) {
+        memoirMarkdown = truth.markdown;
+        console.log('[cleanup] TRUTH PASS removed ' + truth.removed.length +
+          ' unsupported sentence(s) for ' + customer.name + ':');
+        truth.removed.forEach(function (s) { console.log('   - ' + s); });
+      } else {
+        console.log('[cleanup] truth pass: nothing unsupported for ' + customer.name);
+      }
+    } catch (e) {
+      console.error('[cleanup] truth pass skipped (kept memoir as written): ' + e.message);
+    }
+
     // 4. Render to .docx (with photos placed inline)
     console.log('[cleanup] Rendering .docx');
     const docxBuffer = await renderMemoirDocx(memoirMarkdown, photos);
@@ -532,6 +552,115 @@ async function qualityPassWithClaude(memoirMarkdown) {
     throw new Error('quality-pass output too short (' + (cleaned ? cleaned.length : 0) + ' vs ' + memoirMarkdown.length + ')');
   }
   return cleaned;
+}
+
+// ----------------------------------------------------------------------------
+// TRUTH PASS — the sentence-level check that the memoir only says what the
+// storyteller actually said.
+//
+// WHY: on Aug 23 2026 two real testers were run through this pipeline. Bill had
+// recorded 197 words; his memoir came back with an entire invented closing —
+// "Looking back, I see how much Memphis shaped me... those things stay with
+// you" — warm, plausible, and never said by him. Robbie (619 words) got one
+// invented line. The pattern: THE LESS SOMEONE SAYS, THE MORE THE WRITER FILLS
+// IN, which means it is worst for every new customer. MEMOIR_SYSTEM_PROMPT
+// already forbids invention in absolute terms, so prompt wording is not the fix
+// — the output has to be checked against the source.
+//
+// This pass NEVER rewrites the book. It asks for the exact offending sentences
+// and deletes them mechanically, so nothing new can be introduced by the fixer.
+// Validated on both real cases: 5/5 caught for Bill, 1/1 for Robbie, no false
+// positives on the true material.
+// ----------------------------------------------------------------------------
+const TRUTH_PASS_SYSTEM_PROMPT = [
+"You are a fact-checker protecting a senior's memoir. You will receive (A) the RAW TRANSCRIPTS of everything they actually said, and (B) the MEMOIR written from those transcripts.",
+"Your ONLY job is to find sentences in the memoir that the storyteller DID NOT actually say - invented memories, invented feelings, invented meaning, added sensory detail, or reflective commentary the writer supplied on their behalf.",
+"WHAT IS ALLOWED (do NOT flag these):",
+"- The same content reordered, regrouped, trimmed of filler, or joined into flowing sentences.",
+"- Grammar fixed, a dropped connecting word restored, a garbled name corrected, a spoken fragment completed into a clean sentence.",
+"- Chapter titles and headings (lines beginning with #).",
+"WHAT TO FLAG:",
+"- Any sentence stating a fact, event, place, person, date or detail that does not appear in the transcripts.",
+"- Any sentence assigning a feeling, lesson, or significance the storyteller did not express themselves.",
+"- Reflective or summarising commentary written FOR them ('Looking back, I see how much X shaped me', 'those things stay with you').",
+"- Invented certainty where they were uncertain.",
+"BE PRECISE: quote each offending sentence EXACTLY as it appears in the memoir, character for character, including its punctuation. Do not paraphrase, do not merge two sentences, do not include the heading.",
+"When in doubt, do NOT flag it. A true sentence wrongly removed is worse than a borderline one kept.",
+"OUTPUT: return ONLY valid JSON, no other text: {\"unsupported\": [\"exact sentence\", \"exact sentence\"]}. If everything is supported, return {\"unsupported\": []}."
+].join('\n');
+
+async function truthPassWithClaude(memoirMarkdown, combinedTranscripts) {
+  const userMsg = '(A) RAW TRANSCRIPTS - everything they actually said:\n\n' + combinedTranscripts +
+    '\n\n=====\n\n(B) THE MEMOIR written from those transcripts:\n\n' + memoirMarkdown;
+  const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2000,
+      system: TRUTH_PASS_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!resp.ok) throw new Error('Claude API error (truth pass): ' + await resp.text());
+  const data = await resp.json();
+  let text = (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
+  text = text.replace(/^```(?:json)?/m, '').replace(/```$/m, '').trim();
+
+  let flagged = [];
+  try {
+    const parsed = JSON.parse(text);
+    flagged = Array.isArray(parsed && parsed.unsupported) ? parsed.unsupported : [];
+  } catch (e) {
+    throw new Error('truth pass returned unparseable JSON: ' + text.slice(0, 200));
+  }
+  if (flagged.length === 0) return { markdown: memoirMarkdown, removed: [] };
+
+  // Delete ONLY exact, verbatim matches. Anything we cannot find character for
+  // character is left alone — we never guess at what to cut.
+  let out = memoirMarkdown;
+  const removed = [];
+  flagged.forEach(function (sentence) {
+    const s = String(sentence || '').trim();
+    if (!s || s.length < 12) return;          // too short to be safely unique
+    if (s.charAt(0) === '#') return;           // never remove a chapter heading
+    if (out.indexOf(s) === -1) return;         // not verbatim — leave it
+    out = out.replace(s, '');
+    removed.push(s);
+  });
+  if (removed.length === 0) return { markdown: memoirMarkdown, removed: [] };
+
+  // Tidy what the deletions left behind: stranded spaces, empty paragraphs, and
+  // any chapter heading that now has no prose under it at all.
+  out = out.split('\n').map(function (line) {
+    return /^#/.test(line) ? line : line.replace(/[ \t]{2,}/g, ' ').trim();
+  }).join('\n');
+  out = out.replace(/\n{3,}/g, '\n\n');
+  const lines = out.split('\n');
+  const kept = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) {
+      let j = i + 1, hasProse = false;
+      while (j < lines.length && !/^##\s/.test(lines[j])) {
+        if (lines[j].trim() && !/^#/.test(lines[j])) { hasProse = true; break; }
+        j++;
+      }
+      if (!hasProse) continue; // empty chapter — drop the heading too
+    }
+    kept.push(lines[i]);
+  }
+  out = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+
+  // Safety net: a truth pass should trim, never gut. If it wants to cut a third
+  // of the book, something is wrong — fail so the caller keeps the original.
+  if (out.length < memoirMarkdown.length * 0.65) {
+    throw new Error('truth pass wanted to remove too much (' + out.length + ' vs ' + memoirMarkdown.length + ')');
+  }
+  return { markdown: out, removed: removed };
 }
 
 // ----------------------------------------------------------------------------
@@ -1501,6 +1630,7 @@ module.exports = {
   renderMemoirDocx, // exported so we can unit-test the renderer
   polishWithClaude, // exported so we can iterate on the prompt with sample data
   qualityPassWithClaude, // exported so we can iterate/test the proofread pass
+  truthPassWithClaude,   // exported so we can iterate/test the invention check
   applyRevision,    // voice-revision: apply one spoken change
   runRevisionAsync, // voice-revision: async orchestrator
   loadCustomerPhotos,
