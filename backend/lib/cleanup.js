@@ -133,7 +133,61 @@ const COUPLE_MEMOIR_SYSTEM_PROMPT = [
 // ----------------------------------------------------------------------------
 // Top-level orchestrator. Throws on any error; caller decides how to handle.
 // ----------------------------------------------------------------------------
-async function runCleanupPipeline(customerId) {
+// ----------------------------------------------------------------------------
+// PIPELINE QUEUE — only N books are built at once.
+//
+// Building one book is the heaviest thing this service does: transcription, a
+// streamed memoir generation, a proofread, a truth pass, then DOCX + interior
+// PDF (with photos) + cover PDF rendering. A 66-page render already OOM'd the
+// old 512MB instance. runCleanupPipeline was fired-and-forgotten from four
+// places with NO limit, and boot recovery starts one per stranded customer in a
+// loop — so a restart that stranded five books would launch five heavy
+// pipelines at once, OOM, restart, and resume all five again: a crash loop, at
+// exactly the moment the service is already unhealthy.
+//
+// Books are not time-critical to the minute. Serialising them costs a few
+// minutes of waiting and removes the whole failure class. MAX_CONCURRENT_
+// PIPELINES can raise it if the box is ever bigger.
+// ----------------------------------------------------------------------------
+const MAX_CONCURRENT_PIPELINES = Math.max(1, Number(process.env.MAX_CONCURRENT_PIPELINES || 1));
+let _pipelineRunning = 0;
+const _pipelineWaiting = [];
+const _pipelineSeen = new Set(); // customer ids running or queued — no duplicates
+
+function _drainPipelineQueue() {
+  while (_pipelineRunning < MAX_CONCURRENT_PIPELINES && _pipelineWaiting.length) {
+    const next = _pipelineWaiting.shift();
+    _pipelineRunning++;
+    runCleanupPipelineNow(next.customerId)
+      .then(next.resolve, next.reject)
+      .then(function () {
+        _pipelineRunning--;
+        _pipelineSeen.delete(next.customerId);
+        if (_pipelineWaiting.length) {
+          console.log('[pipeline] finished one; ' + _pipelineWaiting.length + ' still waiting');
+        }
+        _drainPipelineQueue();
+      });
+  }
+}
+
+function runCleanupPipeline(customerId) {
+  if (_pipelineSeen.has(customerId)) {
+    console.log('[pipeline] ' + customerId + ' is already building or queued — ignoring duplicate request');
+    return Promise.resolve({ skipped: 'already queued' });
+  }
+  _pipelineSeen.add(customerId);
+  return new Promise(function (resolve, reject) {
+    _pipelineWaiting.push({ customerId: customerId, resolve: resolve, reject: reject });
+    if (_pipelineRunning >= MAX_CONCURRENT_PIPELINES) {
+      console.log('[pipeline] queued ' + customerId + ' (' + _pipelineRunning +
+        ' building, ' + _pipelineWaiting.length + ' waiting)');
+    }
+    _drainPipelineQueue();
+  });
+}
+
+async function runCleanupPipelineNow(customerId) {
   const customer = await db.queryOne(
     'SELECT id, email, name, access_token, follow_up_done, is_couple, partner_name FROM customers WHERE id = $1',
     [customerId]
@@ -1438,7 +1492,14 @@ async function generateNextQuestion(combinedTranscripts, name) {
 async function transcribeRecordingInBackground(recording, isCouple) {
   if (!recording || !recording.storage_key) return;
   try {
-    await db.query("UPDATE recordings SET transcript_status = 'transcribing' WHERE id = $1 AND transcript_status IS DISTINCT FROM 'completed'", [recording.id]);
+    // Claim it atomically. Uploading already fires this, and /follow-up fires it
+    // as a backstop — without a claim both can transcribe the same clip, paying
+    // twice and racing on the final write. Only the winner proceeds.
+    const claim = await db.query(
+      "UPDATE recordings SET transcript_status = 'transcribing' " +
+      " WHERE id = $1 AND (transcript_status IS NULL OR transcript_status IN ('pending','error')) RETURNING id",
+      [recording.id]);
+    if (!claim.rowCount) return; // already completed, or someone else is on it
     const transcript = await transcribeFromR2(recording.storage_key, isCouple ? { speakerLabels: true, speakersExpected: 2 } : {});
     await db.query("UPDATE recordings SET transcript = $1, transcript_status = 'completed' WHERE id = $2", [transcript, recording.id]);
   } catch (e) {

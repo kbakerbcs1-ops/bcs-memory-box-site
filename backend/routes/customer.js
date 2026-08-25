@@ -9,6 +9,15 @@ const { runCleanupPipeline, emailAdminDraftReady, runRevisionAsync, transcribeRe
 // In-memory cache of the personalized "next question" per customer, keyed on how
 // many of their recordings are transcribed — so we only call the AI when that
 // grows, not on every page load. Lost on restart (just regenerates); no DB needed.
+// Small bounded caches. These are process-lifetime Maps: unbounded, they grow
+// with every customer and every recording forever on an always-on box. Capped
+// with simple oldest-out eviction — the entries are cheap to regenerate.
+const _CACHE_MAX = 500;
+function _cachePut(map, key, value) {
+  if (map.has(key)) map.delete(key);           // refresh insertion order
+  map.set(key, value);
+  while (map.size > _CACHE_MAX) map.delete(map.keys().next().value);
+}
 const _nextQCache = new Map();
 const _followUpCache = new Map(); // recording id -> question|null (one AI call per clip)
 const printOrder = require('../lib/printOrder');
@@ -262,14 +271,14 @@ router.get('/follow-up', async (req, res) => {
 
     // Too thin to build on — don't spend a call, don't nag them.
     if (String(latest.transcript).trim().split(/\s+/).length < 4) {
-      _followUpCache.set(latest.id, null);
+      _cachePut(_followUpCache, latest.id, null);
       return res.json({ ready: true, question: null });
     }
 
     let question = null;
     try { question = await generateInSessionFollowUp(latest.transcript, customer.name); }
     catch (e) { console.error('[follow-up] generation failed: ' + e.message); }
-    _followUpCache.set(latest.id, question || null);
+    _cachePut(_followUpCache, latest.id, question || null);
     res.json({ ready: true, question: question || null });
   } catch (err) {
     console.error('[follow-up] error:', err);
@@ -324,7 +333,7 @@ router.get('/next-question', async (req, res) => {
     catch (e) { console.error('[next-question] generation failed: ' + e.message); }
     if (!question) return res.json({ question: null });
 
-    _nextQCache.set(customer.id, { count: done.length, question: question });
+    _cachePut(_nextQCache, customer.id, { count: done.length, question: question });
     res.json({ question: question, personalized: true });
   } catch (err) {
     console.error('[next-question] error:', err);
