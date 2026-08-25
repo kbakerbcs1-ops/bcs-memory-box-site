@@ -404,9 +404,52 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     // Daily heartbeat / dead-man's-switch: a "still alive + quick status" email so
     // that if the alert channel (or the whole service) ever breaks, its ABSENCE is
     // itself the signal. Ken can also trigger one on demand from the dashboard.
-    setInterval(function () {
-      sendHeartbeat().catch(function (e) { console.error('[heartbeat] tick failed:', e.message); });
-    }, 24 * 60 * 60 * 1000);
+    //
+    // SCHEDULED TO A FIXED TIME OF DAY, not "24h from boot". The old
+    // setInterval(24h) restarted its countdown on every deploy, so a week of
+    // active development silenced it completely: the last heartbeat was Aug 22
+    // 2026 and five deploys over the following two days each pushed the next one
+    // another 24h into the future. Ken noticed it had stopped — the dead-man's
+    // switch had quietly died, which is the one thing it must never do.
+    // A fixed daily time means a restart simply re-aims at the next occurrence.
+    // It also arrives at a predictable hour, which is the point: you can only
+    // notice an email is MISSING if you know when to expect it.
+    var HEARTBEAT_UTC_HOUR = 13;   // 13:00 UTC = 8am CDT / 7am CST
+    var HEARTBEAT_UTC_MIN = 0;
+    function msUntilNextHeartbeat() {
+      var now = new Date();
+      var next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+                                   HEARTBEAT_UTC_HOUR, HEARTBEAT_UTC_MIN, 0, 0));
+      if (next.getTime() <= now.getTime()) next = new Date(next.getTime() + 24 * 60 * 60 * 1000);
+      return next.getTime() - now.getTime();
+    }
+    function scheduleHeartbeat() {
+      setTimeout(function () {
+        sendHeartbeat().catch(function (e) { console.error('[heartbeat] tick failed:', e.message); });
+        setInterval(function () {
+          sendHeartbeat().catch(function (e) { console.error('[heartbeat] tick failed:', e.message); });
+        }, 24 * 60 * 60 * 1000);
+      }, msUntilNextHeartbeat());
+    }
+    scheduleHeartbeat();
+    console.log('[heartbeat] next one in ' + Math.round(msUntilNextHeartbeat() / 60000) + ' minutes');
+
+    // Boot catch-up: if we restarted shortly AFTER the daily slot, that day's
+    // heartbeat would otherwise be lost. Send one now. (A cluster of deploys in
+    // the same hour can produce a repeat — a duplicate reassurance email is a far
+    // smaller problem than a missing one.)
+    (function heartbeatBootCatchUp() {
+      var now = new Date();
+      var slot = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+                                   HEARTBEAT_UTC_HOUR, HEARTBEAT_UTC_MIN, 0, 0));
+      var minsSinceSlot = (now.getTime() - slot.getTime()) / 60000;
+      if (minsSinceSlot >= 0 && minsSinceSlot <= 90) {
+        setTimeout(function () {
+          console.log('[heartbeat] boot catch-up (restarted ' + Math.round(minsSinceSlot) + ' min after the daily slot)');
+          sendHeartbeat().catch(function (e) { console.error('[heartbeat] catch-up failed:', e.message); });
+        }, 75 * 1000);
+      }
+    })();
 
     // Daily customer re-engagement sweep (audit C5): gently nudge paying
     // customers who have gone quiet mid-journey so they never silently stall.
