@@ -258,7 +258,19 @@ async function runCleanupPipeline(customerId) {
     //     rewrite. NON-FATAL and never gutting: any failure, or a result that
     //     wants to cut more than a third of the book, keeps the original.
     try {
-      const truth = await truthPassWithClaude(memoirMarkdown, combined);
+      // The checker must see EVERYTHING they said, not just `combined`.
+      // `combined` deliberately EXCLUDES the follow-up answer recordings (those
+      // live in answeredQA and are passed to the writer separately) — so a truth
+      // pass fed only `combined` would flag a customer's genuine spoken answers
+      // as invented and DELETE TRUE CONTENT. Caught in the Aug 25 audit before
+      // any book was generated; the original validation missed it because
+      // neither test case had follow-up answers.
+      const everythingSaid = combined + (answeredQA.length
+        ? '\n\n' + answeredQA.map(function (qa, i) {
+            return '[FOLLOW-UP ANSWER ' + (i + 1) + ' — we asked: ' + qa.question + ']\n' + qa.answer;
+          }).join('\n\n')
+        : '');
+      const truth = await truthPassWithClaude(memoirMarkdown, everythingSaid);
       if (truth.removed.length) {
         memoirMarkdown = truth.markdown;
         console.log('[cleanup] TRUTH PASS removed ' + truth.removed.length +

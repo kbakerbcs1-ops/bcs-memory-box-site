@@ -99,8 +99,19 @@ async function sweepPrintJobs() {
     );
 
     // --- Shipped: tell the CUSTOMER, and copy Ken. ---
+    // WAIT FOR THE TRACKING LINK. Lulu can report SHIPPED before tracking_urls
+    // is populated. The email is sent exactly once (we then set status='shipped'),
+    // so firing early would hand the customer "tracking should appear shortly"
+    // and they would never get the link at all. If Lulu was ALREADY showing
+    // SHIPPED on the previous sweep and there is still no tracking (so at least
+    // an hour has passed), send it anyway rather than stay silent forever.
     const isShipped = status && String(status).toUpperCase() === 'SHIPPED';
-    if (isShipped && job.status !== 'shipped') {
+    const seenShippedBefore = String(job.last_lulu_status || '').toUpperCase() === 'SHIPPED';
+    if (isShipped && !tracking && !seenShippedBefore) {
+      console.log('[printwatch] job ' + job.lulu_print_job_id +
+        ' is SHIPPED but has no tracking yet — holding the customer email for one more sweep');
+    }
+    if (isShipped && job.status !== 'shipped' && (tracking || seenShippedBefore)) {
       const who = job.customer_name || 'there';
       const firstName = String(who).trim().split(/\s+/)[0];
       const track = tracking
