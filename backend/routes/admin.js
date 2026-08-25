@@ -177,6 +177,16 @@ router.get('/customers', requireAdmin, async (req, res) => {
         c.paid_at,
         c.created_at,
         c.updated_at,
+        -- REAL last activity. customers.updated_at is NOT touched when someone
+        -- records, so the dashboard used to show active people as dormant —
+        -- Mike's row read Aug 3 when he had recorded on Aug 24. Take the latest
+        -- of the customer row, their newest recording and their newest draft.
+        GREATEST(
+          c.updated_at,
+          COALESCE((SELECT MAX(r.created_at) FROM recordings r WHERE r.customer_id = c.id), c.created_at),
+          COALESCE((SELECT MAX(d.created_at) FROM drafts d WHERE d.customer_id = c.id), c.created_at)
+        ) AS last_activity,
+        (SELECT MAX(r.created_at) FROM recordings r WHERE r.customer_id = c.id) AS last_recording_at,
         (SELECT COUNT(*) FROM recordings r WHERE r.customer_id = c.id) AS recording_count,
         (SELECT COUNT(*) FROM drafts d WHERE d.customer_id = c.id) AS draft_count
       FROM customers c

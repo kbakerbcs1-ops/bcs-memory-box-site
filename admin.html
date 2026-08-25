@@ -152,6 +152,15 @@ function bcsEmailLink(btn) {
 
 function escapeHtml(s) { var d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
 function fmtDate(iso) { if(!iso) return ''; return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }
+// Last activity, with how long ago — the column exists to spot who has gone
+// quiet, and "Aug 24" alone makes you do the arithmetic every time.
+function fmtActivity(iso) {
+  if (!iso) return '';
+  var d = new Date(iso), days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  var ago = days <= 0 ? 'today' : (days === 1 ? '1 day ago' : days + ' days ago');
+  var colour = days >= 14 ? '#c0392b' : (days >= 7 ? '#b3761f' : '#5a7a5a');
+  return fmtDate(iso) + '<br><span style="color:' + colour + ';font-size:12px;">' + ago + '</span>';
+}
 function fmtSize(b) { b=+b||0; if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 
 async function api(path, opts) {
@@ -329,7 +338,7 @@ async function showDashboard() {
           '<td>' + c.recording_count + '</td>' +
           '<td>' + c.draft_count + '</td>' +
           '<td class="muted">' + fmtDate(c.created_at) + '</td>' +
-          '<td class="muted">' + fmtDate(c.updated_at) + '</td>' +
+          '<td class="muted">' + fmtActivity(c.last_activity || c.updated_at) + '</td>' +
         '</tr>';
       });
       html += '</tbody></table>';
