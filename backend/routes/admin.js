@@ -481,6 +481,44 @@ router.get('/photo/:id/view', allowAdminOrSig('photo'), async (req, res) => {
 // GET /api/admin/draft/:id
 // Returns the draft including its markdown content (for Ken to read/edit)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// POST /api/admin/draft/:id/truth-check
+// Audit a book that has ALREADY been written: does it contain sentences the
+// storyteller never actually said?
+//
+// READ-ONLY — it reports, it does not touch the draft. The truth pass only runs
+// during generation, so every book written before Aug 24 2026 (including Kelly
+// Wright's, which went to print) was never checked. This is how you check one
+// after the fact without regenerating it.
+// ---------------------------------------------------------------------------
+router.post('/draft/:id/truth-check', requireAdmin, async (req, res) => {
+  try {
+    const draft = await db.queryOne(
+      `SELECT d.id, d.customer_id, d.markdown_content, c.name AS customer_name
+         FROM drafts d JOIN customers c ON c.id = d.customer_id WHERE d.id = $1`,
+      [req.params.id]);
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    if (!draft.markdown_content) return res.status(400).json({ error: 'That draft has no text stored.' });
+
+    const said = await cleanup.loadEverythingSaid(draft.customer_id);
+    if (!said.text.trim()) return res.status(400).json({ error: 'No transcripts on file to check against.' });
+
+    const result = await cleanup.truthPassWithClaude(draft.markdown_content, said.text);
+    res.json({
+      ok: true,
+      customer: draft.customer_name,
+      recordings: said.recordingCount,
+      followUpAnswers: said.followUpCount,
+      unsupported: result.removed,
+      unsupportedCount: result.removed.length,
+      note: 'Read-only. The draft was NOT modified.',
+    });
+  } catch (err) {
+    console.error('[admin/truth-check] error:', err);
+    res.status(500).json({ error: 'Could not run the check: ' + (err && err.message) });
+  }
+});
+
 router.get('/draft/:id', requireAdmin, async (req, res) => {
   try {
     const draft = await db.queryOne(

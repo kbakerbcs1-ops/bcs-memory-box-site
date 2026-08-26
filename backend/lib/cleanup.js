@@ -655,6 +655,38 @@ const TRUTH_PASS_SYSTEM_PROMPT = [
 "OUTPUT: return ONLY valid JSON, no other text: {\"unsupported\": [\"exact sentence\", \"exact sentence\"]}. If everything is supported, return {\"unsupported\": []}."
 ].join('\n');
 
+// Everything a storyteller actually said, assembled the same way the pipeline
+// assembles it: the main recordings, PLUS the follow-up answers (which live in
+// separate recordings and are otherwise easy to forget — omitting them is
+// exactly the bug the Aug 25 audit caught). Used by the admin truth-check so an
+// ALREADY-WRITTEN book can be audited without regenerating it.
+async function loadEverythingSaid(customerId) {
+  const { rows: recordings } = await db.query(
+    'SELECT id, original_filename, transcript FROM recordings WHERE customer_id = $1 ORDER BY created_at ASC',
+    [customerId]);
+  const { rows: fqRows } = await db.query(
+    'SELECT question, answer_recording_id FROM follow_up_questions WHERE customer_id = $1 ORDER BY sort_order ASC',
+    [customerId]);
+  const recById = {}; recordings.forEach(function (r) { recById[r.id] = r; });
+  const answerIds = new Set(fqRows.filter(function (q) { return q.answer_recording_id; })
+                                  .map(function (q) { return q.answer_recording_id; }));
+  const main = recordings.filter(function (r) { return !answerIds.has(r.id); });
+  let out = main.map(function (r, i) {
+    return '[RECORDING ' + (i + 1) + ' \u2014 ' + (r.original_filename || 'untitled') + ']\n' +
+           (r.transcript || '(no transcript)');
+  }).join('\n\n');
+  const answered = fqRows
+    .filter(function (q) { return q.answer_recording_id && recById[q.answer_recording_id]; })
+    .map(function (q) { return { question: q.question, answer: (recById[q.answer_recording_id].transcript || '').trim() }; })
+    .filter(function (qa) { return qa.answer; });
+  if (answered.length) {
+    out += '\n\n' + answered.map(function (qa, i) {
+      return '[FOLLOW-UP ANSWER ' + (i + 1) + ' \u2014 we asked: ' + qa.question + ']\n' + qa.answer;
+    }).join('\n\n');
+  }
+  return { text: out, recordingCount: main.length, followUpCount: answered.length };
+}
+
 async function truthPassWithClaude(memoirMarkdown, combinedTranscripts) {
   const userMsg = '(A) RAW TRANSCRIPTS - everything they actually said:\n\n' + combinedTranscripts +
     '\n\n=====\n\n(B) THE MEMOIR written from those transcripts:\n\n' + memoirMarkdown;
@@ -1704,6 +1736,7 @@ module.exports = {
   polishWithClaude, // exported so we can iterate on the prompt with sample data
   qualityPassWithClaude, // exported so we can iterate/test the proofread pass
   truthPassWithClaude,   // exported so we can iterate/test the invention check
+  loadEverythingSaid,    // exported for the admin truth-check on an existing book
   applyRevision,    // voice-revision: apply one spoken change
   runRevisionAsync, // voice-revision: async orchestrator
   loadCustomerPhotos,
