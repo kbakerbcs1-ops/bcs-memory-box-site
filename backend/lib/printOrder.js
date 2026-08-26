@@ -257,4 +257,4 @@ async function autoOrderOnApproval(customer, draft) {
   }
 }
 
-module.exports = { autoOrderOnApproval, HARDCOVER_PLANS, COST_CEILING };
+module.exports = { autoOrderOnApproval, loadShippingAddress, HARDCOVER_PLANS, COST_CEILING };

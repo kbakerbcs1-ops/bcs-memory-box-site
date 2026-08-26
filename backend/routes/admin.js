@@ -801,6 +801,60 @@ router.delete('/voice-clip/:id', requireAdmin, async (req, res) => {
 // ===========================================================================
 
 // GET /api/admin/print-jobs — every print job, newest first.
+// ---------------------------------------------------------------------------
+// GET /api/admin/shipping-quote?customerId=<id>&pages=<n>
+// What every Lulu shipping speed would cost for a real book to a real address.
+//
+// Orders currently go out at MAIL — Lulu's cheapest and slowest — which is why
+// Kelly's hardcover shows "arrives Sep 9-11" for a book approved on Aug 22.
+// That is a genuine customer-experience decision (a few dollars against an ~$82
+// margin), and it should be made from real numbers, not guessed. Quotes every
+// level side by side so the trade-off is visible.
+// ---------------------------------------------------------------------------
+const SHIPPING_LEVELS = ['MAIL', 'PRIORITY_MAIL', 'GROUND', 'EXPEDITED', 'EXPRESS'];
+
+router.get('/shipping-quote', requireAdmin, async (req, res) => {
+  try {
+    if (!lulu.enabled) return res.status(400).json({ error: 'Lulu is not configured' });
+    const pages = Math.max(2, Number(req.query.pages) || 66);
+
+    // Use a real customer's address — shipping cost depends on destination.
+    // Default to whoever the most recent print order was for.
+    let address = null, forWhom = null;
+    const targetId = req.query.customerId || (await db.queryOne(
+      'SELECT customer_id FROM print_jobs ORDER BY created_at DESC LIMIT 1') || {}).customer_id;
+    if (targetId) {
+      address = await printOrder.loadShippingAddress(targetId);
+      const c = await db.queryOne('SELECT name FROM customers WHERE id = $1', [targetId]);
+      forWhom = c && c.name;
+    }
+    if (!address) return res.status(400).json({ error: 'No shipping address on file to quote against.' });
+    if (address.email == null) address.email = 'quote@bcsmemorybox.com';
+
+    const quotes = [];
+    for (const level of SHIPPING_LEVELS) {
+      try {
+        const cost = await lulu.calculateCost({
+          podPackageId: lulu.DEFAULT_POD_PACKAGE_ID, pageCount: pages, quantity: 1,
+          address, shippingLevel: level,
+        });
+        quotes.push({
+          level,
+          shipping: cost && cost.shipping_cost != null ? Number(cost.shipping_cost) : null,
+          total: cost && cost.total_cost_incl_tax != null ? Number(cost.total_cost_incl_tax) : null,
+          currency: (cost && cost.currency) || 'USD',
+        });
+      } catch (e) {
+        quotes.push({ level, error: String(e.message).slice(0, 160) });
+      }
+    }
+    res.json({ ok: true, pages, forWhom, current: 'MAIL', quotes });
+  } catch (err) {
+    console.error('[admin/shipping-quote] error:', err);
+    res.status(500).json({ error: 'Could not get shipping quotes: ' + (err && err.message) });
+  }
+});
+
 router.get('/print-jobs', requireAdmin, async (req, res) => {
   try {
     const { rows } = await db.query(`
