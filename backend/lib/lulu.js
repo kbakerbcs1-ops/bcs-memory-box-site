@@ -242,6 +242,35 @@ async function calculateCoverDimensions({ podPackageId, pageCount }) {
   return { widthIn, heightIn, raw };
 }
 
+// Pull the useful facts out of a Lulu print-job response. ONE extractor, used by
+// both the watchdog and the admin refresh, so the two can never drift apart.
+// Everything is best-effort: Lulu's shape varies by status and a missing field
+// must never throw.
+function summarizeJob(remote) {
+  const out = {
+    status: null, tracking_url: null, tracking_id: null, carrier: null,
+    shipping_level: null, is_cancellable: null,
+    dispatch_min: null, dispatch_max: null, arrival_min: null, arrival_max: null,
+  };
+  if (!remote || typeof remote !== 'object') return out;
+  try {
+    out.status = (remote.status && (remote.status.name || remote.status)) || null;
+    out.shipping_level = remote.shipping_level || remote.shipping_option_level || null;
+    out.is_cancellable = (typeof remote.is_cancellable === 'boolean') ? remote.is_cancellable : null;
+    const d = remote.estimated_shipping_dates || {};
+    out.dispatch_min = d.dispatch_min || null;
+    out.dispatch_max = d.dispatch_max || null;
+    out.arrival_min = d.arrival_min || null;
+    out.arrival_max = d.arrival_max || null;
+    const li = (remote.line_items && remote.line_items[0]) || {};
+    out.tracking_url = (li.tracking_urls && li.tracking_urls[0])
+      || (remote.tracking_urls && remote.tracking_urls[0]) || null;
+    out.tracking_id = li.tracking_id || null;
+    out.carrier = li.carrier_name || null;
+  } catch (_) { /* best effort by design */ }
+  return out;
+}
+
 async function getPrintJob(id) {
   return apiFetch('/print-jobs/' + encodeURIComponent(id) + '/', 'GET');
 }
@@ -260,6 +289,7 @@ module.exports = {
   calculateCoverDimensions,
   createPrintJob,
   getPrintJob,
+  summarizeJob,
   cancelPrintJob,
   toLuluAddress,
 };

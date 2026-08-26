@@ -154,6 +154,21 @@ function escapeHtml(s) { var d=document.createElement('div'); d.textContent=s==n
 function fmtDate(iso) { if(!iso) return ''; return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }
 // Last activity, with how long ago — the column exists to spot who has gone
 // quiet, and "Aug 24" alone makes you do the arithmetic every time.
+// What Lulu expects to happen, in plain words. We now keep the dispatch/arrival
+// estimates, the carrier and the tracking id, so "it has been in production for
+// four days" can be answered on this page instead of by asking Lulu by hand.
+function expectedStr(j) {
+  var bits = [];
+  var dmin = j.estimated_dispatch_min, dmax = j.estimated_dispatch_max;
+  var amin = j.estimated_arrival_min, amax = j.estimated_arrival_max;
+  function d(x) { return new Date(x).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+  if (dmin || dmax) bits.push('ships ' + (dmin && dmax && dmin !== dmax ? d(dmin) + '–' + d(dmax) : d(dmin || dmax)));
+  if (amin || amax) bits.push('arrives ' + (amin && amax && amin !== amax ? d(amin) + '–' + d(amax) : d(amin || amax)));
+  if (j.carrier) bits.push(escapeHtml(j.carrier) + (j.tracking_id ? ' ' + escapeHtml(j.tracking_id) : ''));
+  if (!bits.length && j.shipping_level) bits.push(escapeHtml(j.shipping_level) + ' — no estimate yet');
+  if (!bits.length) return '—';
+  return bits.join('<br>');
+}
 function fmtActivity(iso) {
   if (!iso) return '';
   var d = new Date(iso), days = Math.floor((Date.now() - d.getTime()) / 86400000);
@@ -447,7 +462,7 @@ async function showPrintOrders() {
       html += '<div class="empty">No print orders yet. When a hardcover customer approves their book, the order appears here.</div>';
     } else {
       html += '<table><thead><tr>' +
-        '<th>Customer</th><th>Order status</th><th>Lulu status</th><th>Cost</th><th>Placed</th><th>Actions</th>' +
+        '<th>Customer</th><th>Order status</th><th>Lulu status</th><th>Expected</th><th>Cost</th><th>Placed</th><th>Actions</th>' +
         '</tr></thead><tbody>';
       jobs.forEach(function(j){
         var cancelable = (j.status === 'submitted' && j.lulu_print_job_id);
@@ -461,6 +476,7 @@ async function showPrintOrders() {
           '<td><strong>' + escapeHtml(j.customer_name || '(deleted customer)') + '</strong><br><span class="muted" style="font-size:12px;">' + escapeHtml(j.customer_email || '') + '</span></td>' +
           '<td><span class="status-pill status-' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span>' + (j.lulu_env === 'sandbox' ? ' <span class="muted" style="font-size:11px;">(test)</span>' : '') + (j.status === 'validated' ? '<br><span class="muted" style="font-size:11px;">price check only — no order</span>' : '') + '</td>' +
           '<td class="muted">' + escapeHtml(j.last_lulu_status || '—') + '</td>' +
+          '<td class="muted" style="font-size:12px;">' + expectedStr(j) + '</td>' +
           '<td>' + costStr + '</td>' +
           '<td class="muted">' + fmtDate(j.created_at) + '</td>' +
           '<td>' + actions + (j.error ? '<div style="color:#c0392b;font-size:12px;margin-top:4px;max-width:260px;">' + escapeHtml(j.error) + '</div>' : '') + '</td>' +

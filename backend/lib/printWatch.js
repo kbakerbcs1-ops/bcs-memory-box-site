@@ -76,26 +76,35 @@ async function sweepPrintJobs() {
       console.error('[printwatch] could not read Lulu job ' + job.lulu_print_job_id + ': ' + e.message);
       continue;
     }
-    const status = (remote && remote.status && (remote.status.name || remote.status)) || null;
-    let tracking = null;
-    try {
-      const li = remote && remote.line_items && remote.line_items[0];
-      tracking = (li && li.tracking_urls && li.tracking_urls[0])
-        || (remote && remote.tracking_urls && remote.tracking_urls[0]) || null;
-    } catch (_) { /* shape varies */ }
+    // Keep everything Lulu told us, not just the status word. We used to throw
+    // the rest away, so when a book sat IN_PRODUCTION for days there was no way
+    // to tell whether that was normal without asking Lulu by hand.
+    const sum = lulu.summarizeJob(remote);
+    const status = sum.status;
+    const tracking = sum.tracking_url;
 
     const isBad = status && TERMINAL_BAD.includes(String(status).toUpperCase());
     const alreadyFlagged = job.status === 'error';
 
     await db.query(
       `UPDATE print_jobs
-          SET last_lulu_status = COALESCE($2, last_lulu_status),
-              tracking_url     = COALESCE($3, tracking_url),
-              status           = CASE WHEN $4 THEN 'error' ELSE status END,
-              error            = CASE WHEN $4 THEN $5 ELSE error END,
-              updated_at       = NOW()
+          SET last_lulu_status       = COALESCE($2, last_lulu_status),
+              tracking_url           = COALESCE($3, tracking_url),
+              status                 = CASE WHEN $4 THEN 'error' ELSE status END,
+              error                  = CASE WHEN $4 THEN $5 ELSE error END,
+              lulu_detail            = $6,
+              estimated_dispatch_min = $7, estimated_dispatch_max = $8,
+              estimated_arrival_min  = $9, estimated_arrival_max  = $10,
+              carrier                = COALESCE($11, carrier),
+              tracking_id            = COALESCE($12, tracking_id),
+              shipping_level         = COALESCE($13, shipping_level),
+              is_cancellable         = $14,
+              updated_at             = NOW()
         WHERE id = $1`,
-      [job.id, status, tracking, !!isBad, isBad ? reasonFromJob(remote) : null]
+      [job.id, status, tracking, !!isBad, isBad ? reasonFromJob(remote) : null,
+       JSON.stringify(remote || {}),
+       sum.dispatch_min, sum.dispatch_max, sum.arrival_min, sum.arrival_max,
+       sum.carrier, sum.tracking_id, sum.shipping_level, sum.is_cancellable]
     );
 
     // --- Shipped: tell the CUSTOMER, and copy Ken. ---

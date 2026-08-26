@@ -807,6 +807,9 @@ router.get('/print-jobs', requireAdmin, async (req, res) => {
       SELECT p.id, p.external_id, p.status, p.lulu_print_job_id, p.lulu_env,
              p.total_cost, p.currency, p.last_lulu_status, p.tracking_url,
              p.error, p.created_at, p.updated_at,
+             p.estimated_dispatch_min, p.estimated_dispatch_max,
+             p.estimated_arrival_min, p.estimated_arrival_max,
+             p.carrier, p.tracking_id, p.shipping_level, p.is_cancellable,
              c.id AS customer_id, c.name AS customer_name, c.email AS customer_email
         FROM print_jobs p
         LEFT JOIN customers c ON c.id = p.customer_id
@@ -830,22 +833,27 @@ router.post('/print-job/:id/refresh', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'This order was never placed with Lulu, so there is nothing to refresh.' });
     }
     const remote = await lulu.getPrintJob(job.lulu_print_job_id);
-    const luluStatus = (remote && remote.status && (remote.status.name || remote.status)) || null;
-    let tracking = null;
-    try {
-      const li = remote && remote.line_items && remote.line_items[0];
-      tracking = (li && li.tracking_urls && li.tracking_urls[0])
-        || (remote && remote.tracking_urls && remote.tracking_urls[0]) || null;
-    } catch (_) { /* shape varies; tracking is best-effort */ }
+    const sum = lulu.summarizeJob(remote);   // same extractor the watchdog uses
+    const luluStatus = sum.status;
+    const tracking = sum.tracking_url;
     await db.query(
       `UPDATE print_jobs
-         SET last_lulu_status = COALESCE($2, last_lulu_status),
-             tracking_url = COALESCE($3, tracking_url),
+         SET last_lulu_status       = COALESCE($2, last_lulu_status),
+             tracking_url           = COALESCE($3, tracking_url),
+             lulu_detail            = $4,
+             estimated_dispatch_min = $5, estimated_dispatch_max = $6,
+             estimated_arrival_min  = $7, estimated_arrival_max  = $8,
+             carrier                = COALESCE($9, carrier),
+             tracking_id            = COALESCE($10, tracking_id),
+             shipping_level         = COALESCE($11, shipping_level),
+             is_cancellable         = $12,
              updated_at = NOW()
        WHERE id = $1`,
-      [job.id, luluStatus, tracking]
+      [job.id, luluStatus, tracking, JSON.stringify(remote || {}),
+       sum.dispatch_min, sum.dispatch_max, sum.arrival_min, sum.arrival_max,
+       sum.carrier, sum.tracking_id, sum.shipping_level, sum.is_cancellable]
     );
-    res.json({ ok: true, last_lulu_status: luluStatus, tracking_url: tracking });
+    res.json({ ok: true, last_lulu_status: luluStatus, tracking_url: tracking, detail: sum });
   } catch (err) {
     console.error('[admin/print-job/refresh] error:', err);
     res.status(502).json({ error: 'Could not reach Lulu to refresh this order: ' + err.message });
