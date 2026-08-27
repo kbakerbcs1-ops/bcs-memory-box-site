@@ -1957,7 +1957,14 @@ function bindPhotoDrop() {
     var hint = document.createElement('p');
     hint.id = 'photo-drop-hint';
     hint.style.cssText = 'margin-top:10px;font-size:14px;color:#5a4a3a;';
-    hint.innerHTML = 'On a computer: open your <strong>Photos</strong> app, then <strong>drag a picture anywhere onto this page</strong> and let go &mdash; you don\'t have to aim for the box. Tip: if the Photos window is covering the page, drag its edge to make it smaller (or slide it to one side) so you can see this page beside it. On a phone, just tap the button above.';
+    // Wording reviewed Aug 26, 2026. A button-first rewrite was drafted and
+    // REJECTED by Ken: it asks a customer to hunt for a "Photos"/"Pictures"
+    // entry in a sidebar they have never noticed, which he judged riskier than
+    // the drag they can at least see themselves doing. Kept as-is apart from
+    // dropping the phone sentence — Ken does not want customers building their
+    // memoir on a phone (Kelly, who is 50 and computer-literate, found it
+    // awkward), so the page should not invite it.
+    hint.innerHTML = 'On a computer: open your <strong>Photos</strong> app, then <strong>drag a picture anywhere onto this page</strong> and let go &mdash; you don\'t have to aim for the box. Tip: if the Photos window is covering the page, drag its edge to make it smaller (or slide it to one side) so you can see this page beside it.';
     zone.appendChild(hint);
   }
 
