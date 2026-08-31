@@ -21,6 +21,7 @@ const printWatch     = require('./lib/printWatch');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
 const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat } = require('./lib/cleanup');
 const reminders = require('./lib/reminders');
+const closed = require('./lib/closed');
 const mailer = require('./lib/mailer');
 const pricing = require('./lib/pricing');
 
@@ -132,6 +133,10 @@ app.get('/health', (req, res) => res.json({ status: 'ok', db: db.enabled }));
 // ============================================================================
 // Customer portal API
 // ============================================================================
+// CLOSED (Aug 31, 2026): every customer-facing route is refused while
+// lib/closed.js says CLOSED. Admin, voice (the QR in the book) and print
+// are mounted below and stay open on purpose.
+app.use('/api/customer', closed.closedGuard);
 app.use('/api/customer/request-link', linkLimiter);
 app.use('/api/customer/signup', signupLimiter);
 app.use('/api/customer', customerRoutes);
@@ -149,7 +154,7 @@ app.use('/api/print', printRoutes);          // public print-ready PDFs Lulu fet
 // /trial — original free-trial endpoint (unchanged, still serves the homepage
 // recording widget for visitors who want to hear a 90-second sample).
 // ============================================================================
-app.post('/trial', trialLimiter, upload.single('audio'), async (req, res) => {
+app.post('/trial', closed.closedGuard, trialLimiter, upload.single('audio'), async (req, res) => {
   try {
     const audio = req.file;
     const email = (req.body.email || '').trim();
@@ -457,7 +462,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     // computes/logs who WOULD be nudged and sends nothing to customers.
     // Boot catch-up: if a restart reset the daily timer, run once shortly after
     // boot as long as no REAL sweep has happened in the last ~20h.
-    const remindersDry = function () { return process.env.REMINDERS_ENABLED !== 'true'; };
+    // CLOSED: force dry-run so the sweep can never email a customer we have
+    // already said goodbye to, whatever REMINDERS_ENABLED is set to on Render.
+    const remindersDry = function () { return closed.CLOSED || process.env.REMINDERS_ENABLED !== 'true'; };
     setTimeout(function () {
       reminders.lastRealSweepAgeHours().then(function (hrs) {
         if (hrs != null && hrs <= 20) return; // already swept for real today
