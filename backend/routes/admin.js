@@ -10,6 +10,7 @@ const lulu = require('../lib/lulu');
 const printOrder = require('../lib/printOrder');
 const cleanup = require('../lib/cleanup');
 const reminders = require('../lib/reminders');
+const support = require('../lib/support');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 
@@ -1019,6 +1020,88 @@ router.post('/print-job/:id/cancel', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[admin/print-job/cancel] error:', err);
     res.status(500).json({ error: 'Something went wrong. Check the server logs for details.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Support inbox — customer emails to hello@, each with Bullet's draft reply.
+// Nothing reaches a customer until Ken presses Send (POST /support/:id/reply).
+// ---------------------------------------------------------------------------
+router.get('/support', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT m.id, m.from_address, m.from_name, m.subject, m.status, m.needs_ken, m.needs_ken_reason,
+              m.ignored_reason, m.received_at, m.replied_at, m.draft_error, m.customer_id, c.name AS customer_name
+         FROM support_messages m LEFT JOIN customers c ON c.id = m.customer_id
+        ORDER BY m.received_at DESC LIMIT 200`);
+    res.json({ messages: rows });
+  } catch (err) {
+    console.error('[admin/support] list error:', err);
+    res.status(500).json({ error: 'Could not load the support inbox.' });
+  }
+});
+
+router.get('/support/:id', requireAdmin, async (req, res) => {
+  try {
+    const message = await db.queryOne(
+      `SELECT m.*, c.name AS customer_name, c.status AS customer_status
+         FROM support_messages m LEFT JOIN customers c ON c.id = m.customer_id WHERE m.id = $1`, [req.params.id]);
+    if (!message) return res.status(404).json({ error: 'Message not found.' });
+    const { rows: earlier } = await db.query(
+      `SELECT id, subject, status, received_at, replied_at FROM support_messages
+        WHERE from_address = $1 AND id <> $2 ORDER BY received_at DESC LIMIT 10`, [message.from_address, message.id]);
+    res.json({ message: message, earlier: earlier });
+  } catch (err) {
+    console.error('[admin/support] get error:', err);
+    res.status(500).json({ error: 'Could not load that message.' });
+  }
+});
+
+router.post('/support/:id/reply', requireAdmin, async (req, res) => {
+  const text = String((req.body && req.body.text) || '').trim();
+  if (!text) return res.status(400).json({ error: 'The reply is empty.' });
+  let claimed;
+  try {
+    // Claim it first so a double-click can never send the same reply twice.
+    claimed = await db.queryOne(
+      `UPDATE support_messages SET status = 'sending' WHERE id = $1 AND status <> 'sending' AND status <> 'replied'
+       RETURNING *`, [req.params.id]);
+    if (!claimed) return res.status(409).json({ error: 'This message has already been answered (or is being sent).' });
+    await support.sendReply(claimed, text);
+    await db.query(`UPDATE support_messages SET status = 'replied', reply_text = $2, replied_at = NOW() WHERE id = $1`,
+      [claimed.id, text]);
+    console.log('[admin/support] reply sent to ' + claimed.from_address + ' (' + claimed.id + ')');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/support] reply error:', err);
+    if (claimed) {
+      await db.query(`UPDATE support_messages SET status = $2 WHERE id = $1`,
+        [claimed.id, claimed.ai_draft ? 'draft_ready' : 'new']).catch(function () {});
+    }
+    res.status(500).json({ error: 'The reply could not be sent: ' + err.message });
+  }
+});
+
+router.post('/support/:id/close', requireAdmin, async (req, res) => {
+  try {
+    const row = await db.queryOne(
+      `UPDATE support_messages SET status = 'closed' WHERE id = $1 AND status <> 'sending' RETURNING id`, [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Message not found.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/support] close error:', err);
+    res.status(500).json({ error: 'Could not update that message.' });
+  }
+});
+
+router.post('/support/:id/redraft', requireAdmin, async (req, res) => {
+  try {
+    const draft = await support.draftAndNotify(req.params.id, { notify: false });
+    if (!draft) return res.status(502).json({ error: 'Bullet could not write a draft just now — try again in a minute.' });
+    res.json({ ok: true, draft: draft });
+  } catch (err) {
+    console.error('[admin/support] redraft error:', err);
+    res.status(500).json({ error: 'Could not write a new draft: ' + err.message });
   }
 });
 

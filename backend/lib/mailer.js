@@ -76,20 +76,21 @@ function storyLinkEmail({ name, portalUrl, firstTime }) {
   return { subject, html };
 }
 
-async function sendEmail(to, subject, html) {
+// `extra` (optional) adds Resend fields, e.g. { text, headers } for a threaded reply.
+async function sendEmail(to, subject, html, extra) {
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
+    body: JSON.stringify(Object.assign({
       from: fromFor(to),
       to: to === ADMIN_EMAIL ? ADMIN_RECIPIENTS : to,
       reply_to: to === ADMIN_EMAIL ? ADMIN_EMAIL : 'hello@bcsmemorybox.com',
       subject: subject,
       html: html,
-    }),
+    }, extra || {})),
   });
   if (!resp.ok) throw new Error('Resend error: ' + await resp.text());
 }

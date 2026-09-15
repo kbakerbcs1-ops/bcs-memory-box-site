@@ -10,14 +10,17 @@
 //      forged requests are refused.
 //   2. Record the event once (Resend retries; the svix-id dedupes them).
 //   3. If a customer's address is DEAD — a permanent bounce, a suppressed
-//      address, a failed send, or a spam complaint — mark the customer
-//      (customers.email_bounced_at), which stops reminder emails to them and
-//      shows a red flag on the admin dashboard, and email Ken ONCE.
+//      address, a failed send, or a spam complaint — record the address in
+//      email_dead_addresses, which stops reminder emails to it and shows a red
+//      flag on the admin dashboard, and email Ken ONCE.
 //   Temporary bounces (mailbox full, server busy) are recorded but not flagged.
+//
+// It also receives email.received (a customer wrote to hello@) and passes it to
+// lib/support.js, which stores it, drafts a reply and tells Ken.
 //
 // Setup (Ken, once, in the Resend dashboard): Webhooks -> Add endpoint ->
 //   https://<backend>/api/email/webhook, events: email.bounced, email.failed,
-//   email.suppressed, email.complained. Copy the signing secret (whsec_...) into
+//   email.suppressed, email.complained, email.received. Copy the signing secret (whsec_...) into
 //   the server's RESEND_WEBHOOK_SECRET environment variable.
 // ============================================================================
 
@@ -25,6 +28,7 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../lib/db');
 const mailer = require('../lib/mailer');
+const support = require('../lib/support');
 
 const router = express.Router();
 
@@ -101,6 +105,20 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       [req.headers['svix-id'], String(event.type || ''), data.email_id || null, to,
        (data.bounce && data.bounce.type) || null, reason]
     );
+    // A customer wrote to hello@ — answer Resend straight away (drafting takes a
+    // while), then store it, draft a reply and tell Ken in the background.
+    if (inserted.rows.length > 0 && event.type === 'email.received' && data.email_id) {
+      res.json({ ok: true });
+      support.handleReceived(data.email_id).catch(function (err) {
+        console.error('[support] could not process received email ' + data.email_id + ':', err);
+        mailer.sendEmail(mailer.ADMIN_EMAIL, 'A customer email arrived but the dashboard could not read it',
+          '<p>Ken,</p><p>An email to hello@bcsmemorybox.com arrived, but I could not store it in the Support inbox (' +
+          mailer.escapeHtml(err.message) + '). It is still in your Gmail — please answer it from there.</p><p>— Bullet</p>'
+        ).catch(function () {});
+      });
+      return;
+    }
+
     if (inserted.rows.length === 0 || !reason || to.length === 0) {
       return res.json({ ok: true });
     }

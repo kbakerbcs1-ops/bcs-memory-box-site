@@ -324,7 +324,7 @@ async function showDashboard() {
     var html =
       '<div class="toolbar">' +
         '<h1>Customers</h1>' +
-        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-print-orders">📦 Print Orders</button> <button class="btn" id="test-alert-btn">🔔 Test alerts</button> <button class="btn" id="preview-reminders-btn">✉️ Preview reminders</button> <span id="test-alert-status" class="muted" style="font-size:13px;margin-left:6px;"></span></div>' +
+        '<div class="summary">' + rows.length + ' total &nbsp;·&nbsp; <button class="btn" id="view-support">💬 Support inbox</button> <button class="btn" id="view-print-orders">📦 Print Orders</button> <button class="btn" id="test-alert-btn">🔔 Test alerts</button> <button class="btn" id="preview-reminders-btn">✉️ Preview reminders</button> <span id="test-alert-status" class="muted" style="font-size:13px;margin-left:6px;"></span></div>' +
       '</div>' +
       '<div id="reminders-box"></div>' +
       '<div style="border:1px solid #e0d8c8;border-radius:10px;padding:18px 20px;margin:0 0 22px;background:#faf7f0;">' +
@@ -361,6 +361,8 @@ async function showDashboard() {
     document.getElementById('main').innerHTML = html;
     var poBtn = document.getElementById('view-print-orders');
     if (poBtn) poBtn.addEventListener('click', showPrintOrders);
+    var supBtn = document.getElementById('view-support');
+    if (supBtn) supBtn.addEventListener('click', showSupport);
     var testAlertBtn = document.getElementById('test-alert-btn');
     if (testAlertBtn) testAlertBtn.addEventListener('click', async function(){
       var st = document.getElementById('test-alert-status');
@@ -445,6 +447,156 @@ async function showDashboard() {
 // Print Orders view — see every automatic Lulu hardcover order and cancel one
 // within the safety window (before Lulu starts printing).
 // ============================================================================
+// ============================================================================
+// Support inbox — customer emails with Bullet's draft replies. Ken sends.
+// ============================================================================
+var SUPPORT_STATUS_LABELS = {
+  new: 'New — no draft yet', draft_ready: 'Draft ready', sending: 'Sending…',
+  replied: 'Replied', closed: 'Handled', ignored: 'Automatic mail (ignored)'
+};
+
+async function showSupport() {
+  document.getElementById('header-meta').innerHTML = 'Signed in <a id="logout-link">Sign out</a>';
+  var ll = document.getElementById('logout-link'); if (ll) ll.addEventListener('click', doLogout);
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading support inbox…</p></div>';
+  try {
+    var data = await api('/api/admin/support');
+    var msgs = data.messages || [];
+    var waiting = msgs.filter(function(m){ return m.status === 'new' || m.status === 'draft_ready'; }).length;
+    var html =
+      '<div class="toolbar">' +
+        '<h1>Support inbox</h1>' +
+        '<div class="summary">' + waiting + ' waiting for you &nbsp;·&nbsp; <button class="btn" id="back-to-customers">← Back to customers</button></div>' +
+      '</div>' +
+      '<p style="color:#6b5f48;font-size:14px;margin:0 0 18px;max-width:700px;line-height:1.6;">Emails customers send to hello@bcsmemorybox.com. Bullet writes a draft reply for each one. <strong>Nothing is sent until you press Send.</strong> Everything still arrives in your Gmail too.</p>';
+    if (msgs.length === 0) {
+      html += '<div class="empty">No customer emails yet.</div>';
+    } else {
+      html += '<table><thead><tr><th>From</th><th>Subject</th><th>Status</th><th>Received</th></tr></thead><tbody>';
+      msgs.forEach(function(m){
+        var who = m.customer_name || m.from_name || m.from_address;
+        var flag = m.needs_ken ? ' <span style="color:#b3261e;font-weight:bold;" title="' + escapeHtml(m.needs_ken_reason || '') + '">⚠ needs you</span>' : '';
+        var status = SUPPORT_STATUS_LABELS[m.status] || m.status;
+        var bold = (m.status === 'new' || m.status === 'draft_ready') ? 'font-weight:bold;' : '';
+        html += '<tr class="support-row" data-id="' + escapeHtml(m.id) + '" style="cursor:pointer;' + bold + '">' +
+          '<td>' + escapeHtml(who) + (m.customer_name ? '' : ' <span class="muted" style="font-size:12px;">(not a customer)</span>') + '<div class="muted" style="font-size:12px;font-weight:normal;">' + escapeHtml(m.from_address) + '</div></td>' +
+          '<td>' + escapeHtml(m.subject || '(no subject)') + flag + '</td>' +
+          '<td>' + escapeHtml(status) + '</td>' +
+          '<td class="muted">' + fmtDate(m.received_at) + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    document.getElementById('main').innerHTML = html;
+    document.getElementById('back-to-customers').addEventListener('click', showDashboard);
+    Array.prototype.forEach.call(document.querySelectorAll('.support-row'), function(row){
+      row.addEventListener('click', function(){ showSupportMessage(row.getAttribute('data-id')); });
+    });
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+async function showSupportMessage(id) {
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading message…</p></div>';
+  try {
+    var data = await api('/api/admin/support/' + encodeURIComponent(id));
+    var m = data.message;
+    var who = m.customer_name || m.from_name || m.from_address;
+    var answered = (m.status === 'replied');
+    var html = '<a class="back-link" id="back-to-support">← Back to support inbox</a>';
+    html += '<div class="detail-card">';
+    html +=   '<h2>' + escapeHtml(m.subject || '(no subject)') + '</h2>';
+    html +=   '<div class="detail-row"><div class="label">From</div><div class="val">' + escapeHtml(who) + ' &lt;' + escapeHtml(m.from_address) + '&gt;' +
+                (m.customer_id ? ' <button class="btn" id="open-customer-btn">Open customer</button>' : ' <span class="muted">(not a customer we recognise)</span>') + '</div></div>';
+    html +=   '<div class="detail-row"><div class="label">Received</div><div class="val">' + fmtDate(m.received_at) + '</div></div>';
+    html +=   '<div class="detail-row"><div class="label">Status</div><div class="val">' + escapeHtml(SUPPORT_STATUS_LABELS[m.status] || m.status) +
+                (m.ignored_reason ? ' — ' + escapeHtml(m.ignored_reason) : '') +
+                (m.replied_at ? ' on ' + fmtDate(m.replied_at) : '') + '</div></div>';
+    html +=   '<h3 style="margin:22px 0 8px;">Their message</h3>';
+    html +=   '<div style="background:#faf7f0;border-left:4px solid #8b5a2b;padding:12px 18px;white-space:pre-wrap;line-height:1.6;">' + escapeHtml(m.body_text || '(empty)') + '</div>';
+    if (answered) {
+      html += '<h3 style="margin:22px 0 8px;">Your reply</h3>';
+      html += '<div style="background:#f3f6f1;border-left:4px solid #5a7a4a;padding:12px 18px;white-space:pre-wrap;line-height:1.6;">' + escapeHtml(m.reply_text || '') + '</div>';
+    } else {
+      if (m.needs_ken) {
+        html += '<p style="color:#b3261e;font-weight:bold;margin:22px 0 0;">⚠ Needs you: ' + escapeHtml(m.needs_ken_reason || 'look closely before sending') + '</p>';
+      }
+      if (m.draft_error && !m.ai_draft) {
+        html += '<p style="color:#b3261e;margin:22px 0 0;">Bullet could not write a draft (' + escapeHtml(m.draft_error) + ').</p>';
+      }
+      html += '<h3 style="margin:22px 0 8px;">Reply <span class="muted" style="font-weight:normal;font-size:14px;">— Bullet\'s draft. Change anything you like.</span></h3>';
+      html += '<textarea id="support-reply" style="width:100%;min-height:260px;padding:12px;font-size:16px;font-family:Georgia,serif;line-height:1.6;border:1px solid #c9bfae;border-radius:6px;box-sizing:border-box;">' + escapeHtml(m.ai_draft || '') + '</textarea>';
+      html += '<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
+                '<button class="btn" id="send-reply-btn" style="background:#8b5a2b;color:#fff;">Send reply to ' + escapeHtml(who) + '</button>' +
+                '<button class="btn" id="redraft-btn">Write a new draft</button>' +
+                '<button class="btn" id="close-msg-btn">Mark handled (no reply)</button>' +
+                '<span id="support-status" class="muted" style="font-size:14px;"></span>' +
+              '</div>';
+    }
+    if ((data.earlier || []).length) {
+      html += '<h3 style="margin:26px 0 8px;">Earlier messages from this address</h3><ul>';
+      data.earlier.forEach(function(e){
+        html += '<li><a href="#" class="earlier-msg" data-id="' + escapeHtml(e.id) + '">' + escapeHtml(e.subject || '(no subject)') + '</a> — ' + fmtDate(e.received_at) + ' · ' + escapeHtml(SUPPORT_STATUS_LABELS[e.status] || e.status) + '</li>';
+      });
+      html += '</ul>';
+    }
+    html += '</div>';
+    document.getElementById('main').innerHTML = html;
+
+    document.getElementById('back-to-support').addEventListener('click', showSupport);
+    var oc = document.getElementById('open-customer-btn');
+    if (oc) oc.addEventListener('click', function(){ showCustomer(m.customer_id); });
+    Array.prototype.forEach.call(document.querySelectorAll('.earlier-msg'), function(a){
+      a.addEventListener('click', function(ev){ ev.preventDefault(); showSupportMessage(a.getAttribute('data-id')); });
+    });
+    if (answered) return;
+
+    var st = document.getElementById('support-status');
+    document.getElementById('send-reply-btn').addEventListener('click', async function(){
+      var text = document.getElementById('support-reply').value.trim();
+      if (!text) { st.textContent = 'The reply is empty.'; st.style.color = '#c0392b'; return; }
+      if (!confirm('Send this reply to ' + who + ' (' + m.from_address + ')?')) return;
+      var btn = this; btn.disabled = true;
+      st.textContent = 'Sending…'; st.style.color = '#5a4a3a';
+      try {
+        await api('/api/admin/support/' + encodeURIComponent(id) + '/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text })
+        });
+        showSupportMessage(id);
+      } catch (e) {
+        if (e.message !== 'Unauthorized') { st.textContent = 'Not sent: ' + e.message; st.style.color = '#c0392b'; btn.disabled = false; }
+      }
+    });
+    document.getElementById('redraft-btn').addEventListener('click', async function(){
+      if (document.getElementById('support-reply').value.trim() && !confirm('Replace what is in the reply box with a new draft?')) return;
+      var btn = this; btn.disabled = true;
+      st.textContent = 'Bullet is writing a new draft (this can take a minute)…'; st.style.color = '#5a4a3a';
+      try {
+        await api('/api/admin/support/' + encodeURIComponent(id) + '/redraft', { method: 'POST' });
+        showSupportMessage(id);
+      } catch (e) {
+        if (e.message !== 'Unauthorized') { st.textContent = 'Failed: ' + e.message; st.style.color = '#c0392b'; btn.disabled = false; }
+      }
+    });
+    document.getElementById('close-msg-btn').addEventListener('click', async function(){
+      if (!confirm('Mark this message handled without sending a reply?')) return;
+      try {
+        await api('/api/admin/support/' + encodeURIComponent(id) + '/close', { method: 'POST' });
+        showSupport();
+      } catch (e) {
+        if (e.message !== 'Unauthorized') { st.textContent = 'Failed: ' + e.message; st.style.color = '#c0392b'; }
+      }
+    });
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('main').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
 async function showPrintOrders() {
   document.getElementById('header-meta').innerHTML = 'Signed in <a id="logout-link">Sign out</a>';
   var ll = document.getElementById('logout-link'); if (ll) ll.addEventListener('click', doLogout);
