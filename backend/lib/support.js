@@ -8,7 +8,7 @@
 //     1. fetch the full message from Resend (the webhook carries no body)
 //     2. skip automatic mail (out-of-office, bounces, our own emails)
 //     3. store it in support_messages, linked to the customer if the address matches
-//     4. optionally send a short "your message arrived" note (SUPPORT_AUTO_ACK=true)
+//     4. send a short "your message arrived" note (on; SUPPORT_AUTO_ACK=false turns it off)
 //     5. ask Claude for a draft reply, flagging anything that needs Ken
 //     6. email Ken the message and the draft
 //   Ken reads it in the dashboard's Support inbox and presses Send (sendReply).
@@ -221,7 +221,9 @@ const ACK_TEXT =
   'BCS Memory Box';
 
 async function maybeAcknowledge(message) {
-  if (process.env.SUPPORT_AUTO_ACK !== 'true') return;
+  // On by default: Ken approved this wording on Sept 15 2026. Set
+  // SUPPORT_AUTO_ACK=false on the server to switch it off.
+  if (process.env.SUPPORT_AUTO_ACK === 'false') return;
   // At most one acknowledgement per sender per day.
   const recent = await db.queryOne(
     "SELECT 1 FROM support_messages WHERE from_address = $1 AND ack_sent_at > NOW() - INTERVAL '24 hours'",

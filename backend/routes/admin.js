@@ -876,11 +876,10 @@ router.delete('/voice-clip/:id', requireAdmin, async (req, res) => {
 // GET /api/admin/shipping-quote?customerId=<id>&pages=<n>
 // What every Lulu shipping speed would cost for a real book to a real address.
 //
-// Orders currently go out at MAIL — Lulu's cheapest and slowest — which is why
-// Kelly's hardcover shows "arrives Sep 9-11" for a book approved on Aug 22.
-// That is a genuine customer-experience decision (a few dollars against an ~$82
-// margin), and it should be made from real numbers, not guessed. Quotes every
-// level side by side so the trade-off is visible.
+// Orders go out at printOrder.SHIPPING_LEVEL — PRIORITY_MAIL since the Sept 2026
+// relaunch. Before that they went at MAIL, Lulu's cheapest and slowest, which is
+// why Kelly's hardcover showed "arrives Sep 9-11" for a book approved on Aug 22.
+// Quotes every level side by side so the trade-off stays visible.
 // ---------------------------------------------------------------------------
 const SHIPPING_LEVELS = ['MAIL', 'PRIORITY_MAIL', 'GROUND', 'EXPEDITED', 'EXPRESS'];
 
@@ -919,7 +918,7 @@ router.get('/shipping-quote', requireAdmin, async (req, res) => {
         quotes.push({ level, error: String(e.message).slice(0, 160) });
       }
     }
-    res.json({ ok: true, pages, forWhom, current: 'MAIL', quotes });
+    res.json({ ok: true, pages, forWhom, current: printOrder.SHIPPING_LEVEL, quotes });
   } catch (err) {
     console.error('[admin/shipping-quote] error:', err);
     res.status(500).json({ error: 'Could not get shipping quotes: ' + (err && err.message) });

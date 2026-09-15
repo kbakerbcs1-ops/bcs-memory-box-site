@@ -32,6 +32,12 @@ const HARDCOVER_PLANS = pricing.HARDCOVER_PLANS;
 // anomaly, DO NOT auto-charge, and fall back to Ken. Tune as real data comes in.
 const COST_CEILING = Number(process.env.LULU_COST_CEILING || 75);
 
+// Shipping speed for every hardcover. Switched from MAIL to PRIORITY_MAIL for
+// the Sept 2026 relaunch (Ken's Aug 26 decision, for the first real customers):
+// about $10 more per book (a 66-page quote was $34.69 -> $44.62) for roughly
+// 2-3 days in transit instead of 8-9. Lulu's ~10 days of printing is unchanged.
+const SHIPPING_LEVEL = 'PRIORITY_MAIL';
+
 // SAFETY: real orders only happen when LULU_LIVE_ORDERS=true. Default (unset)
 // is TEST MODE — we validate the price + cover dimensions against Lulu but place
 // NO order and spend nothing. Flip to 'true' when ready to print for real.
@@ -126,7 +132,7 @@ async function autoOrderOnApproval(customer, draft) {
       pageCount: assets.page_count,
       quantity: 1,
       address,
-      shippingLevel: 'MAIL',
+      shippingLevel: SHIPPING_LEVEL,
     });
     const total = Number(cost && cost.total_cost_incl_tax);
     const currency = (cost && cost.currency) || 'USD';
@@ -224,7 +230,7 @@ async function autoOrderOnApproval(customer, draft) {
       coverUrl,
       contactEmail: 'hello@bcsmemorybox.com',
       address,
-      shippingLevel: 'MAIL',
+      shippingLevel: SHIPPING_LEVEL,
       productionDelayMinutes: 1440,
     });
 
@@ -257,4 +263,4 @@ async function autoOrderOnApproval(customer, draft) {
   }
 }
 
-module.exports = { autoOrderOnApproval, loadShippingAddress, HARDCOVER_PLANS, COST_CEILING };
+module.exports = { autoOrderOnApproval, loadShippingAddress, HARDCOVER_PLANS, COST_CEILING, SHIPPING_LEVEL };
