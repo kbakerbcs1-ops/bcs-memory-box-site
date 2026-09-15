@@ -19,6 +19,7 @@ const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
 const printWatch     = require('./lib/printWatch');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
+const emailWebhookRouter = require('./routes/emailWebhook');
 const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat, CLAUDE_MODEL, claudeHeaders, assertClaudeFinished } = require('./lib/cleanup');
 const reminders = require('./lib/reminders');
 const closed = require('./lib/closed');
@@ -117,6 +118,10 @@ app.use((req, res, next) => {
 // The webhookRouter applies express.raw() internally for its single route.
 // ============================================================================
 app.use('/api/stripe/webhook', webhookRouter);
+
+// Resend delivery reports (bounces, failed sends, spam complaints) — also needs
+// the raw body for signature verification. See routes/emailWebhook.js.
+app.use('/api/email/webhook', emailWebhookRouter);
 
 // ============================================================================
 // Health checks

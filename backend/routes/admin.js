@@ -177,6 +177,8 @@ router.get('/customers', requireAdmin, async (req, res) => {
         c.paid_at,
         c.created_at,
         c.updated_at,
+        (SELECT d.first_seen_at FROM email_dead_addresses d WHERE d.email = LOWER(c.email)) AS email_bounced_at,
+        (SELECT d.reason FROM email_dead_addresses d WHERE d.email = LOWER(c.email)) AS email_bounce_reason,
         -- REAL last activity. customers.updated_at is NOT touched when someone
         -- records, so the dashboard used to show active people as dormant —
         -- Mike's row read Aug 3 when he had recorded on Aug 24. Take the latest
@@ -208,7 +210,8 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
   try {
     const customer = await db.queryOne(
       `SELECT id, email, name, plan, access_token, status, paid_at, created_at, updated_at,
-              stripe_customer_id, stripe_payment_intent_id
+              stripe_customer_id, stripe_payment_intent_id,
+              (SELECT d.reason FROM email_dead_addresses d WHERE d.email = LOWER(customers.email)) AS email_bounce_reason
        FROM customers WHERE id = $1`,
       [req.params.id]
     );
@@ -270,6 +273,35 @@ router.get('/customer/:id', requireAdmin, async (req, res) => {
 // audio are kept, so a mistaken delete is fully recoverable. Requires an email
 // confirmation. Used for clearing test accounts before launch.
 // ---------------------------------------------------------------------------
+// POST /api/admin/customer/:id/email  { email }
+// Correct a customer's email address — typically after a bounce showed the one
+// they typed was wrong. The bounce flag lives in email_dead_addresses keyed by
+// address, so the new address starts clean. Ken then uses "Email link to…".
+router.post('/customer/:id/email', requireAdmin, async (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+    const customer = await db.queryOne(
+      'SELECT id, email, name FROM customers WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+    if (!customer) return res.status(404).json({ error: 'Customer not found.' });
+    if (email === String(customer.email || '').toLowerCase()) {
+      return res.status(400).json({ error: 'That is already their email address.' });
+    }
+    const taken = await db.queryOne('SELECT id FROM customers WHERE LOWER(email) = $1 AND id <> $2', [email, customer.id]);
+    if (taken) return res.status(409).json({ error: 'Another customer already uses that email address.' });
+
+    await db.query('UPDATE customers SET email = $1 WHERE id = $2', [email, customer.id]);
+    const dead = await db.queryOne('SELECT reason FROM email_dead_addresses WHERE email = $1', [email]);
+    console.log('[admin/customer/email] ' + customer.email + ' -> ' + email + ' (' + customer.id + ')');
+    res.json({ ok: true, email: email, stillBounces: dead ? dead.reason : null });
+  } catch (err) {
+    console.error('[admin/customer/email] error:', err);
+    res.status(500).json({ error: 'Could not change the email address.' });
+  }
+});
+
 router.delete('/customer/:id', requireAdmin, async (req, res) => {
   try {
     const customer = await db.queryOne(

@@ -92,6 +92,9 @@
       <label for="email">Email address</label>
       <input type="email" id="email" name="email" autocomplete="email" required placeholder="your@email.com" />
 
+      <label for="email-confirm">Type your email address again</label>
+      <input type="email" id="email-confirm" name="email-confirm" autocomplete="off" required placeholder="the same address, once more" />
+
       <button type="submit" id="submit-btn">Continue to Checkout</button>
       <p class="hint">By continuing you'll be taken to a secure credit card page. No account password required.</p>
       <p class="trust-bar" style="margin:14px 0 0;font-size:13.5px;color:#6b5d4f;text-align:center;line-height:1.8;">&#10003; 30-day money-back guarantee&nbsp;&nbsp;&middot;&nbsp;&nbsp;&#128274; Secure Stripe checkout&nbsp;&nbsp;&middot;&nbsp;&nbsp;Private, never sold&nbsp;&nbsp;&middot;&nbsp;&nbsp;Free U.S. shipping</p>
@@ -132,6 +135,14 @@
 
     var name = document.getElementById('name').value.trim();
     var email = document.getElementById('email').value.trim();
+    var emailAgain = document.getElementById('email-confirm').value.trim();
+    // Your story link is sent by email, so a mistyped address means you'd never get it.
+    if (email.toLowerCase() !== emailAgain.toLowerCase()) {
+      showError('The two email addresses don\'t match. Please check them — your story link will be sent there.');
+      btn.disabled = false;
+      btn.textContent = 'Continue to Checkout';
+      return;
+    }
 
     try {
       var planEl = document.querySelector('input[name="plan"]:checked');

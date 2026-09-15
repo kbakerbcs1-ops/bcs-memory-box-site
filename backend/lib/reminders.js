@@ -159,7 +159,8 @@ async function runReminderSweep(opts) {
     "FROM customers c " +
     "LEFT JOIN (SELECT customer_id, MAX(created_at) AS last_rec FROM recordings GROUP BY customer_id) r " +
     "  ON r.customer_id = c.id " +
-    "WHERE c.deleted_at IS NULL AND c.email IS NOT NULL AND c.status = ANY($1::text[])",
+    "WHERE c.deleted_at IS NULL AND c.email IS NOT NULL AND c.status = ANY($1::text[]) " +
+    "AND NOT EXISTS (SELECT 1 FROM email_dead_addresses d WHERE d.email = LOWER(c.email))",
     [ALL_STATUSES]
   )).rows;
 

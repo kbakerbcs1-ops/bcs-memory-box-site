@@ -347,7 +347,7 @@ async function showDashboard() {
       rows.forEach(function(c){
         html += '<tr class="clickable" data-id="' + escapeHtml(c.id) + '">' +
           '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
-          '<td>' + escapeHtml(c.email) + '</td>' +
+          '<td>' + escapeHtml(c.email) + (c.email_bounced_at ? ' <span title="' + escapeHtml(c.email_bounce_reason || 'Email bounced') + '" style="color:#b3261e;font-weight:bold;white-space:nowrap;">⚠ email not reaching them</span>' : '') + '</td>' +
           '<td><span class="status-pill status-' + escapeHtml(c.status) + '">' + escapeHtml(c.status.replace(/_/g,' ')) + '</span></td>' +
           '<td>' + ({hardcover:'Hardcover'}[c.plan] || 'Hardcover') + '</td>' +
           '<td>' + c.recording_count + '</td>' +
@@ -524,7 +524,15 @@ async function showCustomer(id) {
     (data.voiceClips || []).forEach(function(v){ voiceClipByRec[v.recording_id] = v; });
     var html = '<a class="back-link" id="back-link">← Back to all customers</a>';
     html += '<div class="detail-card">';
-    html +=   '<h2>' + escapeHtml(c.name) + ' — <span style="font-weight:normal;color:#888;">' + escapeHtml(c.email) + '</span></h2>';
+    html +=   '<h2>' + escapeHtml(c.name) + ' — <span id="cust-email-text" style="font-weight:normal;color:#888;">' + escapeHtml(c.email) + '</span></h2>';
+    html +=   '<div class="detail-row"><div class="label">Email</div><div class="val">' +
+                (c.email_bounce_reason
+                  ? '<div style="color:#b3261e;font-weight:bold;margin-bottom:6px;">⚠ Our emails are not reaching this address. ' + escapeHtml(c.email_bounce_reason) + '</div>' +
+                    '<div class="muted" style="margin-bottom:6px;font-size:13px;">It is probably mistyped. Get the right address from them by phone, then change it here and use "Email link".</div>'
+                  : '') +
+                '<button class="btn" id="change-email-btn">Change email address</button>' +
+                ' <span id="change-email-status" class="muted" style="margin-left:10px;font-size:13px;"></span>' +
+              '</div></div>';
     html +=   '<div class="detail-row"><div class="label">Status</div><div class="val"><span class="status-pill status-' + escapeHtml(c.status) + '">' + escapeHtml(c.status.replace(/_/g,' ')) + '</span></div></div>';
     html +=   '<div class="detail-row"><div class="label">Plan</div><div class="val">' + ({hardcover:'Hardcover Memoir ($299)'}[c.plan] || 'Hardcover Memoir ($299)') + '</div></div>';
     html +=   '<div class="detail-row"><div class="label">Signed up</div><div class="val">' + fmtDate(c.created_at) + '</div></div>';
@@ -664,6 +672,34 @@ async function showCustomer(id) {
         }
       });
     }
+
+    document.getElementById('change-email-btn').addEventListener('click', async function() {
+      var typed = prompt('New email address for ' + c.name + ':', c.email);
+      if (typed === null) return; // cancelled
+      var again = prompt('Type the new address once more, to be sure:');
+      if (again === null) return;
+      if (typed.trim().toLowerCase() !== again.trim().toLowerCase()) {
+        alert('The two addresses did not match — nothing was changed.');
+        return;
+      }
+      var st = document.getElementById('change-email-status');
+      st.textContent = 'Saving…'; st.style.color = '#5a4a3a';
+      try {
+        var r = await api('/api/admin/customer/' + encodeURIComponent(id) + '/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: typed.trim() })
+        });
+        c.email = r.email;
+        document.getElementById('cust-email-text').textContent = r.email;
+        st.textContent = r.stillBounces
+          ? 'Saved, but this address has bounced before: ' + r.stillBounces
+          : 'Saved. Now use "Email link" to send them their story.';
+        st.style.color = r.stillBounces ? '#b3261e' : '#2a5a2a';
+      } catch (e) {
+        if (e.message !== 'Unauthorized') { st.textContent = 'Failed: ' + e.message; st.style.color = '#c0392b'; }
+      }
+    });
 
     document.getElementById('delete-customer-btn').addEventListener('click', async function() {
       var typed = prompt('Remove ' + c.name + ' from the dashboard.\n\nTheir recordings and files are KEPT — this can be undone.\n\nTo confirm, type their email exactly:\n' + c.email);
