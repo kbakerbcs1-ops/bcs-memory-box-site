@@ -19,7 +19,7 @@ const printRoutes    = require('./routes/print');
 const lulu           = require('./lib/lulu');
 const printWatch     = require('./lib/printWatch');
 const { checkoutRouter, webhookRouter } = require('./routes/stripe');
-const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat } = require('./lib/cleanup');
+const { checkStuckCustomers, recoverStuckOnBoot, resumeStuckProcessingOnBoot, sendHeartbeat, CLAUDE_MODEL, claudeHeaders, assertClaudeFinished } = require('./lib/cleanup');
 const reminders = require('./lib/reminders');
 const closed = require('./lib/closed');
 const mailer = require('./lib/mailer');
@@ -246,21 +246,19 @@ async function cleanupWithClaude(transcript) {
 
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2000,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 8000,
       system: systemPrompt,
       messages: [{ role: 'user', content: 'Here is the transcribed recording:\n\n' + transcript }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error: ' + await resp.text());
   const data = await resp.json();
-  return data.content[0].text.trim();
+  assertClaudeFinished(data.stop_reason, 'trial');
+  return (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
 }
 
 async function sendSampleEmail(toEmail, name, cleanedText) {

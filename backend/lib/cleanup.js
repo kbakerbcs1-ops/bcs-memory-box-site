@@ -28,6 +28,36 @@ const {
 const { imageSize } = require('image-size');
 
 // ----------------------------------------------------------------------------
+// The Claude model used for every AI call (this file and server.js's trial).
+// Moved from claude-sonnet-4-5-20250929 to Claude Opus 5 on Sept 15, 2026:
+// Anthropic listed Sonnet 4.5 for retirement "not sooner than Sept 29, 2026".
+// Opus 5 thinks before it answers by default, and max_tokens covers that
+// thinking PLUS the answer, so every limit below was raised to leave room.
+// fallbacks:'default' (with the beta header) means that if Opus 5's safety
+// checks ever decline a request, Anthropic re-runs it on its recommended
+// fallback model instead of returning nothing.
+// ----------------------------------------------------------------------------
+const CLAUDE_MODEL = 'claude-opus-5';
+
+function claudeHeaders() {
+  return {
+    'x-api-key': process.env.ANTHROPIC_API_KEY,
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'server-side-fallback-2026-07-01',
+    'content-type': 'application/json',
+  };
+}
+
+// A declined request ("refusal") or one that ran out of room ("max_tokens")
+// still comes back as HTTP 200, with empty or cut-off text. Treat both as a
+// failure so a half-finished answer is never used as if it were complete.
+function assertClaudeFinished(stopReason, label) {
+  if (stopReason === 'refusal' || stopReason === 'max_tokens') {
+    throw new Error('Claude API (' + label + ') stopped early: ' + stopReason);
+  }
+}
+
+// ----------------------------------------------------------------------------
 // The memoir-cleanup system prompt sent to Claude.
 // Iterated carefully; preserves voice, organizes into four sections, doesn't
 // fabricate facts. Reads many transcripts; outputs a single Markdown memoir.
@@ -551,14 +581,11 @@ async function polishWithClaude(customerName, combinedTranscripts, photos, answe
 
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 16000,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 64000,
       stream: true,
       system: MEMOIR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
@@ -596,14 +623,11 @@ const QUALITY_PASS_SYSTEM_PROMPT = [
 async function qualityPassWithClaude(memoirMarkdown) {
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 16000,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 64000,
       stream: true,
       system: QUALITY_PASS_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: 'Here is the memoir to proofread:\n\n' + memoirMarkdown }],
@@ -692,20 +716,18 @@ async function truthPassWithClaude(memoirMarkdown, combinedTranscripts) {
     '\n\n=====\n\n(B) THE MEMOIR written from those transcripts:\n\n' + memoirMarkdown;
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2000,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 16000,
       system: TRUTH_PASS_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error (truth pass): ' + await resp.text());
   const data = await resp.json();
+  assertClaudeFinished(data.stop_reason, 'messages');
   let text = (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
   text = text.replace(/^```(?:json)?/m, '').replace(/```$/m, '').trim();
 
@@ -793,14 +815,11 @@ async function polishCoupleWithClaude(name1, name2, combinedTranscripts, photos,
 
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 16000,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 64000,
       stream: true,
       system: COUPLE_MEMOIR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
@@ -1182,7 +1201,7 @@ async function fetchWithRetry(url, options, label) {
 async function readClaudeStream(resp) {
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '', text = '';
+  let buffer = '', text = '', stopReason = null;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -1198,11 +1217,14 @@ async function readClaudeStream(resp) {
       try { evt = JSON.parse(payload); } catch (e) { continue; }
       if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
         text += evt.delta.text;
+      } else if (evt.type === 'message_delta' && evt.delta && evt.delta.stop_reason) {
+        stopReason = evt.delta.stop_reason;
       } else if (evt.type === 'error') {
         throw new Error('Claude stream error: ' + JSON.stringify(evt.error || evt));
       }
     }
   }
+  assertClaudeFinished(stopReason, 'stream');
   return text;
 }
 
@@ -1411,20 +1433,18 @@ async function generateFollowUpQuestions(combinedTranscripts, draftMarkdown) {
     "\n\n----\n\nHere is the draft memoir we wrote from it:\n\n" + draftMarkdown;
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1024,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 8000,
       system: FOLLOWUP_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error (follow-ups): ' + await resp.text());
   const data = await resp.json();
+  assertClaudeFinished(data.stop_reason, 'messages');
   const text = (data.content || []).map(function (b) { return b.text || ''; }).join('');
   return text
     .split('\n')
@@ -1460,20 +1480,19 @@ async function generateInSessionFollowUp(latestTranscript, name) {
     ' just said:\n\n"' + String(latestTranscript || '').trim() + '"\n\n----\n\nAsk the ONE question that opens this up.';
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 150,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 2000,
+      output_config: { effort: 'low' },
       system: FOLLOW_UP_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error (follow-up): ' + await resp.text());
   const data = await resp.json();
+  assertClaudeFinished(data.stop_reason, 'messages');
   const text = (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
   const cleaned = text.replace(/^["'\s]*(?:[-*\u2022]|\d+[.)])?\s*/, '').replace(/\s*["']\s*$/, '').trim();
   if (!cleaned || /^SKIP$/i.test(cleaned)) return null;
@@ -1497,20 +1516,19 @@ async function generateNextQuestion(combinedTranscripts, name) {
     '\n\n----\n\nSuggest the ONE next question to ask them.';
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 200,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 2000,
+      output_config: { effort: 'low' },
       system: NEXT_QUESTION_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
     }),
   });
   if (!resp.ok) throw new Error('Claude API error (next-question): ' + await resp.text());
   const data = await resp.json();
+  assertClaudeFinished(data.stop_reason, 'messages');
   const text = (data.content || []).map(function (b) { return b.text || ''; }).join('').trim();
   // Strip any stray leading bullet/number/quote or trailing quote.
   return text.replace(/^["'\s]*(?:[-*•]|\d+[.)])?\s*/, '').replace(/\s*["']\s*$/, '').trim();
@@ -1584,14 +1602,11 @@ async function applyRevision(currentMarkdown, instruction, customerName) {
 
   const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: claudeHeaders(),
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 16000,
+      model: CLAUDE_MODEL,
+      fallbacks: 'default',
+      max_tokens: 64000,
       stream: true,
       system: REVISION_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMsg }],
@@ -1720,6 +1735,9 @@ async function runRevisionAsync(customerId, draftId, instructionStorageKey) {
 }
 
 module.exports = {
+  CLAUDE_MODEL,
+  claudeHeaders,
+  assertClaudeFinished,
   runCleanupPipeline,
   generateFollowUpQuestions,
   generateNextQuestion,
