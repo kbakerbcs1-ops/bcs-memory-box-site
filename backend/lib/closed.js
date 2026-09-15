@@ -15,7 +15,7 @@
 //   - /api/print/*  Lulu fetching print-ready PDFs for books already ordered
 // ============================================================================
 
-const CLOSED = true;
+const CLOSED = false;
 
 const CLOSED_MESSAGE =
   'BCS Memory Box is no longer taking new stories. Thank you for your interest.';

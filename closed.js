@@ -9,7 +9,7 @@
    the hardcover still plays.
    ========================================================================== */
 (function () {
-  var CLOSED = true;
+  var CLOSED = false;
   if (!CLOSED) return;
 
   function show() {
