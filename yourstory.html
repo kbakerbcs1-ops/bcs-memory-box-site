@@ -84,6 +84,7 @@
   footer{text-align:center;padding:24px;color:#999;font-size:13px;}
   footer a{color:#999;}
 </style>
+<script src="server-address.js?v=20260915"></script>
 </head>
 <body>
 
@@ -105,7 +106,7 @@
 </footer>
 
 <script>
-var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+var API_BASE = window.BCS_API_BASE;
 var RECORDING_TITLES = {};
 var PHOTO_CAPTIONS = {};
 var SAVED_SAFE_HTML = '<strong>\u2713 Saved \u2014 and safe.</strong> Tell your stories in any order \u2014 I\u2019ll tie it all together into one flowing memoir at the end. Whenever you\u2019re ready for more, just go back to the homepage and tap <strong>Continue your story</strong> \u2014 you\u2019ll be right back where you left off.';

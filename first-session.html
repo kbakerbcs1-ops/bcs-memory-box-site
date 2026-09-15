@@ -70,6 +70,7 @@
   .btn-lg{display:inline-block;margin-top:8px;}
   .foot{margin-top:22px;font-size:14px;color:var(--muted);}
 </style>
+<script src="server-address.js?v=20260915"></script>
 </head>
 <body>
   <div class="wrap">
@@ -82,7 +83,7 @@
 
 <script>
 (function(){
-  var API_BASE = 'https://bcs-memory-box-site.onrender.com';
+  var API_BASE = window.BCS_API_BASE;
   function qs(k){ return new URLSearchParams(window.location.search).get(k); }
   var TOKEN = qs('token');
   try { localStorage.setItem('bcs_warmup_done','1'); } catch(e){}

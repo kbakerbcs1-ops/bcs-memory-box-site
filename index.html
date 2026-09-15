@@ -464,6 +464,7 @@
         .trial-notype-tag{display:table;background:#efe4cf;color:#8B1A2B;font-weight:700;font-family:'Open Sans',Arial,sans-serif;font-size:14px;padding:6px 15px;border-radius:999px;margin:12px auto 0;}
         #trial-modal .trial-widget{background:transparent;box-shadow:none;padding:0;margin:0;}
     </style>
+<script src="server-address.js?v=20260915"></script>
 </head>
 <body>
 
@@ -899,7 +900,7 @@
 
 <script>
 (function(){
-  var TRIAL_ENDPOINT = 'https://bcs-memory-box-site.onrender.com/trial';
+  var TRIAL_ENDPOINT = window.BCS_API_BASE + '/trial';
   var MAX_SECONDS = 90;
 
   function $(id){return document.getElementById(id);}
@@ -1092,7 +1093,7 @@
 
 <script>
 (function(){
-  var API = 'https://bcs-memory-box-site.onrender.com/api/customer/request-link';
+  var API = window.BCS_API_BASE + '/api/customer/request-link';
   var btn = document.getElementById('return-send');
   var emailEl = document.getElementById('return-email');
   var statusEl = document.getElementById('return-status');

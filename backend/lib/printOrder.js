@@ -44,7 +44,7 @@ const SHIPPING_LEVEL = 'PRIORITY_MAIL';
 const LIVE_ORDERS = process.env.LULU_LIVE_ORDERS === 'true';
 
 const PUBLIC_BACKEND_URL =
-  process.env.PUBLIC_BACKEND_URL || 'https://bcs-memory-box-site.onrender.com';
+  process.env.PUBLIC_BACKEND_URL || 'https://bcs-memory-box-site-s0wp.onrender.com';
 
 // Look up the print-ready PDF storage keys for a draft, tolerating the columns
 // not existing yet (the print-PDF pipeline is a later build). Any failure →

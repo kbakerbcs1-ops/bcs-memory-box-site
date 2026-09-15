@@ -62,6 +62,7 @@
   .err{display:none;color:#8a3b2f;font-size:16px;line-height:1.5;margin-top:8px;}
   .loading{color:var(--muted);font-size:16px;}
 </style>
+<script src="server-address.js?v=20260915"></script>
 </head>
 <body>
   <div class="card">
@@ -94,7 +95,7 @@
 
 <script>
 (function(){
-  var API='https://bcs-memory-box-site.onrender.com';
+  var API=window.BCS_API_BASE;
   var token=new URLSearchParams(location.search).get('v');
   var el=function(id){return document.getElementById(id);};
   function showError(msg){ el('loading').style.display='none'; el('content').style.display='none'; var e=el('error'); e.textContent=msg; e.style.display='block'; }
