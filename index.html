@@ -498,7 +498,7 @@
             <div class="vsub">A one-minute story</div>
         </a>
         <a href="#" class="hero-video-card" onclick="openVideo('how');return false;" aria-label="Watch the How It Works video" style="margin-top:14px;">
-            <div class="hero-video-thumb"><img src="tutorial-thumb.jpg" alt="How It Works video"><span class="playbtn"></span></div>
+            <div class="hero-video-thumb"><img src="how-it-works-grandma-thumb.jpg" alt="How It Works video"><span class="playbtn"></span></div>
             <div class="vcap">&#9654; Watch: How It Works</div>
         </a>
     </div>
@@ -1152,7 +1152,7 @@
   </div>
 </div>
 <script>
-function openVideo(which){var m=document.getElementById('video-modal');var v=document.getElementById('tutorial-video');if(which==='how'){v.src='tutorial-video.mp4';v.poster='tutorial-thumb.jpg';}else{v.src='grandma-tell-me.mp4';v.poster='grandma-tell-me-thumb.jpg';}m.classList.add('open');try{v.currentTime=0;v.play();}catch(e){}}
+function openVideo(which){var m=document.getElementById('video-modal');var v=document.getElementById('tutorial-video');if(which==='how'){v.src='how-it-works-grandma.mp4';v.poster='how-it-works-grandma-thumb.jpg';}else{v.src='grandma-tell-me.mp4';v.poster='grandma-tell-me-thumb.jpg';}m.classList.add('open');try{v.currentTime=0;v.play();}catch(e){}}
 function closeVideo(){var m=document.getElementById('video-modal');m.classList.remove('open');var v=document.getElementById('tutorial-video');try{v.pause();}catch(e){}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeVideo();});
 </script>
