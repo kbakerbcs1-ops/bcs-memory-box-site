@@ -51,6 +51,14 @@ function storyLinkEmail({ name, portalUrl, firstTime }) {
     : '<p style="margin:22px 0 0;">You can come back to your story as often as you like. '
       + 'If you ever lose this link, request it again from the homepage.</p>';
 
+  // First-timers get pointed at the guide film. It lives on their own story
+  // page, so the link just takes them there and they press play.
+  const guideLine = firstTime
+    ? '<p style="margin:18px 0 0;font-size:15px;color:#5a534c;">'
+      + '<strong>Not sure where to start?</strong> There is a short guide waiting at the top of '
+      + 'your story page \u2014 a minute and a half, and it shows you the whole thing.</p>'
+    : '';
+
   const ignoreLine = firstTime
     ? ''
     : '<p style="margin:18px 0 0;font-size:13px;color:#7a726a;">'
@@ -69,6 +77,7 @@ function storyLinkEmail({ name, portalUrl, firstTime }) {
     + 'If the button does not work, copy and paste this link into your web browser:</p>'
     + '<p style="margin:0;font-size:14px;"><a href="' + portalUrl + '" '
     + 'style="color:#8b5a2b;word-break:break-all;">' + portalUrl + '</a></p>'
+    + guideLine
     + keepLine
     + ignoreLine
     + '</div>';

@@ -218,6 +218,52 @@ function formatSize(bytes) {
 }
 
 // Render the appropriate UI for a given customer status
+// ---------------------------------------------------------------------------
+// The customer guide film. Lives here only — behind the customer's own link,
+// so nobody sees it until they are in the system. Collapsed until asked for,
+// so it never pushes the record button down the page.
+function renderGuideCard(firstTime) {
+  var lead = firstTime
+    ? 'New here? This shows you the whole thing in a minute and a half.'
+    : 'Lost your place? This shows you the whole thing in a minute and a half.';
+  return '<div class="card" id="guide-card" style="background:#faf5ea;border:1px solid #e8dfc9;">' +
+      '<div class="eyebrow">A short guide</div>' +
+      '<h2 style="margin-top:2px;">How to use your Memory Box</h2>' +
+      '<p style="margin-bottom:12px;">' + lead + ' Recording, adding photographs, reading your draft, and approving your book.</p>' +
+      '<div id="guide-slot">' +
+        '<a href="#" onclick="bcsPlayGuide();return false;" style="display:block;max-width:520px;position:relative;text-decoration:none;">' +
+          '<img src="customer-guide-thumb.jpg" alt="Watch the guide" style="width:100%;border-radius:10px;display:block;border:1px solid #e0d6c2;">' +
+          '<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:74px;height:74px;border-radius:50%;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;">' +
+            '<span style="border-left:22px solid #fff;border-top:14px solid transparent;border-bottom:14px solid transparent;margin-left:6px;"></span>' +
+          '</span>' +
+        '</a>' +
+        '<button class="btn" onclick="bcsPlayGuide();return false;" style="margin-top:12px;">\u25B6 Play the guide (1\u00BD minutes)</button>' +
+      '</div>' +
+    '</div>';
+}
+
+// Swap the picture for a real player. Nothing downloads until this is pressed.
+function bcsPlayGuide() {
+  var slot = document.getElementById('guide-slot');
+  if (!slot) return;
+  if (!slot.getAttribute('data-playing')) {
+    slot.setAttribute('data-playing', '1');
+    slot.innerHTML = '<video controls playsinline preload="metadata" ' +
+      'poster="customer-guide-thumb.jpg" src="customer-guide.mp4" ' +
+      'style="width:100%;max-width:720px;border-radius:10px;display:block;background:#000;"></video>';
+  }
+  var v = slot.querySelector('video');
+  if (v) { try { v.play(); } catch (e) {} }
+  var card = document.getElementById('guide-card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// A quiet "show me" link for the individual steps.
+function guideLink(text) {
+  return '<p style="margin:10px 0 0;font-size:15px;">' +
+    '<a href="#" onclick="bcsPlayGuide();return false;" style="color:#8b5a2b;">' + text + '</a></p>';
+}
+
 function renderStatusBar(status) {
   var steps = [
     { key: 'awaiting_payment', label: 'Account created', icon: '✓' },
@@ -283,6 +329,7 @@ function renderPhotoCard(photos) {
   html += '<div class="card">';
   html += '<h2>Add photographs <span style="font-weight:normal;color:#888;font-size:17px;">(optional)</span></h2>';
   html += '<p>Have a favorite picture for your story? Add it here. Press the button and choose a picture from your computer or tablet. There\'s nothing to figure out; Ken places the photos into your memoir for you.</p>';
+  html += guideLink('Show me how to add a photograph');
   if (photos.length > 0) {
     html += '<div class="photo-grid">';
     photos.forEach(function(p) {
@@ -381,6 +428,7 @@ function renderRecordingPage(data) {
   var photos = data.photos || [];
   var html = renderStatusBar(c.status);
   html += renderSuggestedQuestion(data);
+  html += renderGuideCard(recordings.length === 0);
   html += '<div class="card">';
   var firstName = escapeHtml((c.name || '').split(' ')[0] || 'there');
   var isCouple = !!c.isCouple;
@@ -698,6 +746,7 @@ function renderApproveCard(memoir) {
       '<p>When it reads just the way you want, approve it. That tells us it’s final and ready to become your hardcover — nothing changes after this without you.</p>' +
       '<button class="btn btn-large" id="approve-btn" style="background:#2a6b3a;">✓ This is my book — approve it</button>' +
       '<p id="approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
+      guideLink('Show me what approving does') +
     '</div>';
 }
 
