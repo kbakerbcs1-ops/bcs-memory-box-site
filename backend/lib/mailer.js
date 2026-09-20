@@ -41,7 +41,7 @@ function storyLinkEmail({ name, portalUrl, firstTime }) {
 
   const intro = firstTime
     ? 'Welcome to Memory Box! Your story is ready for you to start recording. '
-      + 'Use the button below to open your story page — on this computer or on your phone.'
+      + 'Use the button below to open your story page — on this computer or on your tablet.'
     : 'Here is the link back to your story. Click it to pick up right where you left off.';
 
   const keepLine = firstTime

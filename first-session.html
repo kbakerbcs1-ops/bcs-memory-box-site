@@ -220,7 +220,7 @@
     var mail = 'mailto:hello@bcsmemorybox.com?subject=' + encodeURIComponent('Help with my Memory Box recording');
     var emailBit = ' Still stuck? <a href="' + mail + '" style="color:#8b5a2b;">Email us and we’ll help you</a> — or press Skip.';
     if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
-      return 'I couldn’t find a microphone. If you’re on a computer without one, please try your phone.' + emailBit;
+      return 'I couldn’t find a microphone. If this computer doesn’t have one, please try a tablet instead.' + emailBit;
     }
     if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
       return 'It looks like the microphone is turned off for this page. To turn it on: find the little icon just to the left of the web address at the very top of your screen, tap it, and choose Allow — then press the button again.' + emailBit;
