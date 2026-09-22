@@ -1,7 +1,7 @@
 // ============================================================================
 // Print-job watchdog.
 //
-// WHY THIS EXISTS: on 2026-08-14 Kelly Wright's hardcover was submitted to Lulu
+// WHY THIS EXISTS: on 2026-08-14 a hardcover was submitted to Lulu
 // and REJECTED six seconds later (cover 19.236in when Lulu required 19.00in).
 // Nothing in the system ever asked Lulu what happened, so our dashboard showed
 // 'CREATED' for nine days while she waited for a book that was never printed.
@@ -60,7 +60,7 @@ async function sweepPrintJobs() {
               OR (p.last_lulu_status IN ('REJECTED','CANCELED') AND p.status <> 'error')
               -- OR shipped but the customer has not been told yet. Lulu does not
               -- reliably email API-placed orders (it sent nothing at all when
-              -- Kelly's was rejected), so the "your book is on its way" email is
+              -- the first real one was rejected), so the "your book is on its way" email is
               -- OURS to send. Once sent we set status='shipped' and it drops out.
               OR (p.last_lulu_status = 'SHIPPED' AND p.status <> 'shipped')
             )`

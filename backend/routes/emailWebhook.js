@@ -1,7 +1,7 @@
 // ============================================================================
 // routes/emailWebhook.js — Resend tells us when an email could not be delivered.
 //
-// WHY: on Aug 15 2026 a tester (Nancy) signed up with an address that did not
+// WHY: on Aug 15 2026 a tester signed up with an address that did not
 // exist. Every welcome and reminder bounced, nobody knew, and for two weeks she
 // looked exactly like a customer ignoring us. She had never received a thing.
 //

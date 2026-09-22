@@ -153,7 +153,7 @@ async function autoOrderOnApproval(customer, draft) {
     // a rough fallback: it assumes the spine grows linearly with page count,
     // which is wrong for this hardcover package (Lulu wants 19.00 in flat up to
     // ~100 pages). On Aug 14, 2026 that mismatch produced a 19.236 in cover for
-    // Kelly Wright's 66-page memoir; Lulu REJECTED it six seconds later and the
+    // a 66-page memoir; Lulu REJECTED it six seconds later and the
     // old code swallowed the failure and ordered anyway. So: if we cannot get
     // the real dimensions, we do NOT place the order.
     try {

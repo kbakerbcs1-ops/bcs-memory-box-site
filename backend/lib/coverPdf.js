@@ -15,7 +15,7 @@
 // 90/100/110/120 -> 0.500; 150 -> 0.625; 200 -> 0.750; 300 -> 0.944; 500 -> 1.375.
 // The previous formula (page_count / 136) assumed a straight line from zero and
 // produced 0.486 in for a 66-page book, when Lulu required 0.250 in. That is
-// what got Kelly Wright's first real order REJECTED on 2026-08-14.
+// what got the first real order REJECTED on 2026-08-14.
 //
 // Callers that are about to ORDER must pass spineWidthIn from
 // lulu.calculateCoverDimensions() — this table is only an offline fallback for

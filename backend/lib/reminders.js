@@ -4,7 +4,7 @@
 // partway through — recorded a bit and closed the tab, answered their
 // follow-up questions but never tapped "I'm done," or never opened the
 // "your memoir is ready" email — NOTHING reached out to them. They just
-// silently stalled (the live "Kelly" pattern). The only background job in
+// silently stalled (seen in a live account). The only background job in
 // the system watched one status and emailed only Ken.
 //
 // WHAT THIS DOES: once a day, look for customers who have been sitting in a

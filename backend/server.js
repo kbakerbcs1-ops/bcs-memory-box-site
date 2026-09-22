@@ -356,7 +356,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
           if (!(Number(total) > 0)) throw new Error('cost check returned no usable total');
           // Cover dimensions, reported across a spread of page counts so the spine
           // steps are visible in the log and can be checked against real books.
-          // Ken's concern, Sept 22 2026: his 2nd book and Kelly's needed bigger
+          // Ken's concern, Sept 22 2026: his 2nd book and a later one needed bigger
           // spines than his 1st. The spine is STEPPED, not linear, so seeing the
           // actual numbers matters. These calls are free and order nothing.
           // NOTE: calculateCoverDimensions returns widthIn/heightIn (NOT width/
@@ -409,7 +409,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     }, 10 * 60 * 1000);
 
     // Print-job watchdog: a job that was SUBMITTED is not a job that is PRINTING.
-    // Lulu can reject one within seconds (Kelly Wright, Aug 14 2026 — rejected in
+    // Lulu can reject one within seconds (Aug 14 2026 — rejected in
     // six, and nobody knew for nine days). Re-ask Lulu about every open job and
     // email Ken the moment one has failed. Runs shortly after boot, then hourly.
     setTimeout(function () {

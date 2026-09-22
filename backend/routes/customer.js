@@ -235,7 +235,7 @@ router.get('/me', async (req, res) => {
 // sitting there. Looks only at their newest clip and asks the one question that
 // opens it wider — the thing a human interviewer would say next.
 //
-// WHY THIS EXISTS: on Aug 23 2026 Mike Emes recorded "My wife changed my life.
+// WHY THIS EXISTS: on Aug 23 2026 a tester recorded "My wife changed my life.
 // That was the moment. Yeah." — nine seconds — and stopped. Nothing in the
 // product asked him to go on. Measured end to end, transcript + question takes
 // about 7 seconds, so it can happen while he is still in the chair.
@@ -899,7 +899,7 @@ async function sendEmail(to, subject, html) {
       from: to === 'kbakerbcs1@gmail.com'
         ? 'Bullet <ops@bcsmemorybox.com>'
         : 'BCS Memory Box <ops@bcsmemorybox.com>',
-      // Admin/"Bullet" alerts also go to Kelly (partner); customer mail is unaffected.
+      // Admin/"Bullet" alerts also go to Ken's partner; customer mail is unaffected.
       to: to === 'kbakerbcs1@gmail.com' ? ['kbakerbcs1@gmail.com', 'kelly.wrightn@yahoo.com'] : to,
       reply_to: to === 'kbakerbcs1@gmail.com' ? 'kbakerbcs1@gmail.com' : 'hello@bcsmemorybox.com',
       subject: subject,

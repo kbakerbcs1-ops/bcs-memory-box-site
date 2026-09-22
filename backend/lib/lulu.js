@@ -223,7 +223,7 @@ async function createPrintJob({
 // NOTE: the endpoint is '/cover-dimensions/' at the API ROOT — NOT under
 // '/print-jobs/'. The old path returned 405 on every call, the caller swallowed
 // the error, and we shipped covers sized by the offline formula instead. That
-// is exactly how Kelly Wright's first real order was REJECTED (Aug 14, 2026):
+// is exactly how the first real order was REJECTED (Aug 14, 2026):
 // the formula produced a 19.236in cover for 66 pages when Lulu required 19.00in.
 // Lulu answers in POINTS (72 per inch); we normalise to inches here so callers
 // cannot repeat that unit mix-up.

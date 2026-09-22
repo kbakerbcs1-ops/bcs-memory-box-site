@@ -11,7 +11,7 @@ const FRONTEND_BASE = 'https://www.bcsmemorybox.com';
 // so they show the sender "Bullet". Everything else (customer-facing mail) keeps
 // the "BCS Memory Box" brand.
 const ADMIN_EMAIL = 'kbakerbcs1@gmail.com';
-// Admin/"Bullet" alerts go to Ken AND Kelly (partner). Customer-facing mail is unaffected.
+// Admin/"Bullet" alerts go to Ken AND his partner. Customer-facing mail is unaffected.
 const ADMIN_RECIPIENTS = ['kbakerbcs1@gmail.com', 'kelly.wrightn@yahoo.com'];
 const FROM_BULLET = 'Bullet <ops@bcsmemorybox.com>';
 const FROM_BRAND = 'BCS Memory Box <ops@bcsmemorybox.com>';

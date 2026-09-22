@@ -520,8 +520,8 @@ router.get('/photo/:id/view', allowAdminOrSig('photo'), async (req, res) => {
 // storyteller never actually said?
 //
 // READ-ONLY — it reports, it does not touch the draft. The truth pass only runs
-// during generation, so every book written before Aug 24 2026 (including Kelly
-// Wright's, which went to print) was never checked. This is how you check one
+// during generation, so every book written before Aug 24 2026 (including one
+// that went to print) was never checked. This is how you check one
 // after the fact without regenerating it.
 // ---------------------------------------------------------------------------
 router.post('/draft/:id/truth-check', requireAdmin, async (req, res) => {
@@ -878,7 +878,7 @@ router.delete('/voice-clip/:id', requireAdmin, async (req, res) => {
 //
 // Orders go out at printOrder.SHIPPING_LEVEL — PRIORITY_MAIL since the Sept 2026
 // relaunch. Before that they went at MAIL, Lulu's cheapest and slowest, which is
-// why Kelly's hardcover showed "arrives Sep 9-11" for a book approved on Aug 22.
+// why a hardcover showed "arrives Sep 9-11" for a book approved on Aug 22.
 // Quotes every level side by side so the trade-off stays visible.
 // ---------------------------------------------------------------------------
 const SHIPPING_LEVELS = ['MAIL', 'PRIORITY_MAIL', 'GROUND', 'EXPEDITED', 'EXPRESS'];

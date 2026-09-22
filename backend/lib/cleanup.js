@@ -121,13 +121,13 @@ const COUPLE_MEMOIR_SYSTEM_PROMPT = [
 "",
 "THREE UNBREAKABLE PRINCIPLES:",
 "1. CHAPTERS FIT THIS SHARED LIFE. Do NOT use a fixed template. Read everything first and divide it into the chapters that fit THIS couple. The spine of the book is their life TOGETHER — how they met, courting, the wedding, building a home, children, the hard times and the good years, and who they are now. Where each person told a bit of their OWN early life (before they met), you may give that a short early chapter each, but keep the heart of the book on the life they built together. Give each chapter an evocative, specific title that carries a bit of the story. End with a short reflective closing chapter.",
-"2. THEIR OWN VOICES — TWO OF THEM. Keep each person's exact vocabulary, idioms, rhythm, and level of formality; the two of them do not sound identical, and the book should let each voice come through. Weave the two voices into one flowing narrative — sometimes telling a shared moment in the third person ('They were married in the spring of 1961'), sometimes letting one of them tell it in their own words ('Nancy still laughs about the cake'), and — this is the charm of a couple's book — WHEN THEY REMEMBER THE SAME EVENT DIFFERENTLY, KEEP BOTH memories side by side ('Bill swears the band played too loud; Nancy only remembers dancing'). Never flatten two viewpoints into one, and never invent agreement they didn't express.",
+"2. THEIR OWN VOICES — TWO OF THEM. Keep each person's exact vocabulary, idioms, rhythm, and level of formality; the two of them do not sound identical, and the book should let each voice come through. Weave the two voices into one flowing narrative — sometimes telling a shared moment in the third person ('They were married in the spring of 1961'), sometimes letting one of them tell it in their own words ('Martha still laughs about the cake'), and — this is the charm of a couple's book — WHEN THEY REMEMBER THE SAME EVENT DIFFERENTLY, KEEP BOTH memories side by side ('George swears the band played too loud; Martha only remembers dancing'). Never flatten two viewpoints into one, and never invent agreement they didn't express.",
 "3. STRICTLY THEIR OWN WORDS — smoothed, never invented. This is the firm line and it is absolute. You MAY: reorder and group what they said, connect fragments into flowing paragraphs, trim filler/repetition/false starts, fix grammar, repair garbled spoken sentences so each reads smoothly, correct obvious transcription errors (especially garbled names), and attribute each memory to the right person. You MAY NOT: invent a memory, scene, place, event, feeling, or line of dialogue; add sensory details they never mentioned; assign feelings they did not express; put a story in the wrong person's mouth; or fill a gap with a plausible-sounding fact or date. Every sentence must be something one of them ACTUALLY TOLD US — just told better. Preserve their uncertainty ('around 1962' stays 'around 1962'); never fabricate certainty.",
 "",
 "HOW TO WRITE IT:",
 "- OPEN ON A VIVID, REAL SHARED MEMORY — ideally the moment they met or a scene that captures the two of them — never on birth dates or genealogy. Find the most evocative TRUE thing they said and lead the whole book with it.",
 "- Within each chapter, put things in a natural order (usually chronological) and connect the fragments into flowing paragraphs, using only the lightest transitions.",
-"- Attribute naturally and often, so the reader always knows whose memory this is: 'Bill remembers…', 'To Nancy, it was…', 'The way she tells it…', 'He still says…'. Use their first names, not 'Speaker A'.",
+"- Attribute naturally and often, so the reader always knows whose memory this is: 'George remembers…', 'To Martha, it was…', 'The way she tells it…', 'He still says…'. Use their first names, not 'Speaker A'.",
 "- Tell each memory as a little scene when they gave it that shape. Do not flatten a good story into a bare fact.",
 "- WEAVE dates, places, and names naturally into the prose. Do NOT pile them into lists.",
 "- Combine multiple recordings about the same topic into ONE coherent passage; never repeat the same anecdote twice (unless the two of them tell it differently — then hold both).",
@@ -648,10 +648,10 @@ async function qualityPassWithClaude(memoirMarkdown) {
 // TRUTH PASS — the sentence-level check that the memoir only says what the
 // storyteller actually said.
 //
-// WHY: on Aug 23 2026 two real testers were run through this pipeline. Bill had
+// WHY: on Aug 23 2026 two real testers were run through this pipeline. One had
 // recorded 197 words; his memoir came back with an entire invented closing —
 // "Looking back, I see how much Memphis shaped me... those things stay with
-// you" — warm, plausible, and never said by him. Robbie (619 words) got one
+// you" — warm, plausible, and never said by him. A second case (619 words) got one
 // invented line. The pattern: THE LESS SOMEONE SAYS, THE MORE THE WRITER FILLS
 // IN, which means it is worst for every new customer. MEMOIR_SYSTEM_PROMPT
 // already forbids invention in absolute terms, so prompt wording is not the fix
@@ -659,7 +659,7 @@ async function qualityPassWithClaude(memoirMarkdown) {
 //
 // This pass NEVER rewrites the book. It asks for the exact offending sentences
 // and deletes them mechanically, so nothing new can be introduced by the fixer.
-// Validated on both real cases: 5/5 caught for Bill, 1/1 for Robbie, no false
+// Validated on both real cases: 5/5 caught in the first, 1/1 in the second, no false
 // positives on the true material.
 // ----------------------------------------------------------------------------
 const TRUTH_PASS_SYSTEM_PROMPT = [
@@ -1146,7 +1146,7 @@ async function sendEmail(to, subject, html) {
       from: to === 'kbakerbcs1@gmail.com'
         ? 'Bullet <ops@bcsmemorybox.com>'
         : 'BCS Memory Box <ops@bcsmemorybox.com>',
-      // Admin/"Bullet" alerts also go to Kelly (partner); customer mail is unaffected.
+      // Admin/"Bullet" alerts also go to Ken's partner; customer mail is unaffected.
       to: to === 'kbakerbcs1@gmail.com' ? ['kbakerbcs1@gmail.com', 'kelly.wrightn@yahoo.com'] : to,
       reply_to: to === 'kbakerbcs1@gmail.com' ? 'kbakerbcs1@gmail.com' : 'hello@bcsmemorybox.com',
       subject: subject,
@@ -1194,7 +1194,7 @@ async function fetchWithRetry(url, options, label) {
 // Read an Anthropic STREAMING (SSE) response and return the full assistant text.
 // The big memoir/revision generations are streamed (stream:true) because a
 // non-streaming request keeps the connection open with NO response headers until
-// Claude finishes — and a large book (e.g. Kelly's 11 recordings) can run past
+// Claude finishes — and a large book (e.g. 11 recordings) can run past
 // Node's ~5-minute headers timeout, throwing UND_ERR_HEADERS_TIMEOUT ("fetch
 // failed") and killing the whole pipeline. Streaming returns headers immediately
 // and the text arrives in deltas, so there is no long silent wait to time out.
@@ -1461,7 +1461,7 @@ async function generateFollowUpQuestions(combinedTranscripts, draftMarkdown) {
 // The IN-SESSION follow-up: they have just this second finished speaking and are
 // still sitting there. Unlike NEXT_QUESTION (which moves them to new ground on a
 // later visit), this one goes DEEPER into what they just said, immediately.
-// Why: Mike Emes recorded "My wife changed my life. That was the moment. Yeah."
+// Why: a tester recorded "My wife changed my life. That was the moment. Yeah."
 // and stopped after 9 seconds, because nothing asked him to go on.
 const FOLLOW_UP_SYSTEM_PROMPT = [
 "A senior has just finished recording a short answer and is still sitting at the microphone. Your job is to ask the ONE question a warm, curious interviewer would ask NEXT - the question that opens the door wider on what they just said.",
