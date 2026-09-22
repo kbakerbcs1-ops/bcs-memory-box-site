@@ -354,12 +354,26 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
           });
           const total = cost && cost.total_cost_incl_tax;
           if (!(Number(total) > 0)) throw new Error('cost check returned no usable total');
-          // BONUS (best-effort): cover dimensions. The cover generator already uses
-          // the exact geometry verified from Ken's real proof, so this is optional.
+          // Cover dimensions, reported across a spread of page counts so the spine
+          // steps are visible in the log and can be checked against real books.
+          // Ken's concern, Sept 22 2026: his 2nd book and Kelly's needed bigger
+          // spines than his 1st. The spine is STEPPED, not linear, so seeing the
+          // actual numbers matters. These calls are free and order nothing.
+          // NOTE: calculateCoverDimensions returns widthIn/heightIn (NOT width/
+          // height) — the old check read dims.width and so silently printed nothing.
           let coverNote = '';
           try {
-            const dims = await lulu.calculateCoverDimensions({ pageCount: 34, unit: 'in' });
-            if (dims && dims.width) coverNote = '; 34pg cover ' + dims.width + 'x' + dims.height + ' ' + (dims.unit || 'in');
+            const probe = [34, 66, 80, 90, 120, 150, 200];
+            const parts = [];
+            for (const pc of probe) {
+              const d = await lulu.calculateCoverDimensions({ pageCount: pc });
+              if (d && isFinite(d.widthIn)) {
+                const spine = d.widthIn - 18.75; // 2*8.5 trim + 2*0.875 wrap
+                parts.push(pc + 'pg spine ' + spine.toFixed(3)
+                  + ' (cover ' + d.widthIn.toFixed(3) + 'x' + d.heightIn.toFixed(3) + ')');
+              }
+            }
+            if (parts.length) coverNote = '; COVER SIZES → ' + parts.join(' | ');
           } catch (cd) { coverNote = '; cover-dims check skipped (' + cd.message.slice(0, 60) + ')'; }
           console.log('[lulu] ✅ SELF-TEST PASSED (' + lulu.env + '): keys authenticate; SKU '
             + lulu.DEFAULT_POD_PACKAGE_ID + ' valid; 34pg cost ~' + total + ' ' + ((cost && cost.currency) || 'USD') + coverNote);
