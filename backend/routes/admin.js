@@ -8,6 +8,7 @@ const storage = require('../lib/storage');
 const mailer = require('../lib/mailer');
 const lulu = require('../lib/lulu');
 const printOrder = require('../lib/printOrder');
+const pricing = require('../lib/pricing');
 const cleanup = require('../lib/cleanup');
 const reminders = require('../lib/reminders');
 const support = require('../lib/support');
@@ -700,11 +701,15 @@ router.post('/comp-customer', requireAdmin, async (req, res) => {
     }
 
     const accessToken = db.randomToken(24);
+    // plan is set EXPLICITLY and never left to the column default. A tester created
+    // without it inherits whatever the default happens to be; when that default was a
+    // retired tier, the mailing-address form never rendered and no book was ever
+    // ordered for them. See migration 018.
     const created = await db.queryOne(
-      `INSERT INTO customers (email, name, access_token, status, paid_at, is_couple, partner_name)
-       VALUES ($1, $2, $3, 'recording', NOW(), $4, $5)
+      `INSERT INTO customers (email, name, access_token, status, paid_at, is_couple, partner_name, plan)
+       VALUES ($1, $2, $3, 'recording', NOW(), $4, $5, $6)
        RETURNING id, access_token`,
-      [email, name, accessToken, isCouple, partnerName || null]);
+      [email, name, accessToken, isCouple, partnerName || null, pricing.DEFAULT_PLAN]);
 
     const portalUrl = 'https://www.bcsmemorybox.com/yourstory.html?token=' + encodeURIComponent(created.access_token);
 
