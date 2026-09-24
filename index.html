@@ -549,14 +549,16 @@
         </div>
         <div id="trial-step-4" hidden>
             <div class="trial-spinner"></div>
-            <p style="text-align:center;">Polishing your story — this takes about a minute. Don't close the page.</p>
+            <p style="text-align:center;" id="trial-sending-note">Polishing your story — this takes about a minute. Don't close the page.</p>
         </div>
         <div id="trial-step-5" hidden>
             <p class="trial-success">Your sample is on its way. Check your inbox in a couple minutes (look for an email from BCS Memory Box). Thank you for trying.</p>
         </div>
         <div id="trial-step-6" hidden>
             <p class="trial-error" id="trial-error-msg">Something went wrong. Please try again.</p>
-            <button id="trial-retry" class="btn-secondary trial-btn-large">Start over</button>
+            <p class="trial-hint" id="trial-keep-note" style="margin:0 0 12px;">Your recording is still here &mdash; nothing has been lost.</p>
+            <button id="trial-resend" class="btn-primary trial-btn-large">Try sending again</button>
+            <button id="trial-retry" class="btn-secondary trial-btn-large" style="margin-top:10px;">Record it again</button>
         </div>
     </div>
   </div>
@@ -911,7 +913,7 @@
     }
   }
 
-  var mediaRecorder=null, chunks=[], audioBlob=null, audioUrl=null, timerInterval=null, secondsElapsed=0;
+  var mediaRecorder=null, chunks=[], audioBlob=null, audioUrl=null, timerInterval=null, secondsElapsed=0, micStream=null;
 
   $('trial-start').addEventListener('click', async function(){
     var email = $('trial-email').value.trim();
@@ -922,6 +924,7 @@
     }
     try{
       var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      micStream = stream;
       mediaRecorder = new MediaRecorder(stream);
       chunks=[];
       mediaRecorder.ondataavailable = function(e){chunks.push(e.data);};
@@ -970,33 +973,73 @@
     show(2);
   });
 
-  $('trial-send').addEventListener('click', async function(){
+  // Send the sample with real time limits and automatic retries. The /trial
+  // endpoint transcribes, writes and emails before it answers, so a slow reply is
+  // normal, not a fault — and the server may also be waking up. Each attempt gets
+  // more room than the last: catch a sleeping server quickly, then give a genuinely
+  // slow upload the time it needs. The recording is NEVER discarded on failure.
+  var TRIAL_TRY_MS = [60000, 150000, 300000];
+
+  async function sendTrial(){
     if(!audioBlob){return;}
     show(4);
-    var fd = new FormData();
-    fd.append('audio', audioBlob, 'recording.webm');
-    fd.append('email', $('trial-email').value.trim());
-    fd.append('name', $('trial-name').value.trim());
-    try{
-      var resp = await fetch(TRIAL_ENDPOINT,{method:'POST', body:fd});
-      var data = await resp.json();
-      if(!resp.ok || !data.success){
-        throw new Error(data.error || 'Request failed');
+    var lastErr = null;
+    for(var attempt=0; attempt<TRIAL_TRY_MS.length; attempt++){
+      var statusEl = $('trial-sending-note');
+      if(statusEl){
+        statusEl.textContent = (attempt===0)
+          ? 'Sending your recording — this takes a minute or two. Please keep this window open.'
+          : 'Still sending — the server may be waking up. Your recording is safe; hang tight.';
       }
-      show(5);
-      if(typeof gtag === 'function'){ gtag('event', 'trial_submitted', { event_category: 'conversion' }); }
-    }catch(err){
-      console.error('Trial send error:', err);
-      $('trial-error-msg').textContent = 'Something went wrong: ' + (err.message || 'Unknown error') + '. Please try again, or email Ken directly at hello@bcsmemorybox.com.';
-      show(6);
+      var fd = new FormData();
+      fd.append('audio', audioBlob, 'recording.webm');
+      fd.append('email', $('trial-email').value.trim());
+      fd.append('name', $('trial-name').value.trim());
+      var ctrl = new AbortController();
+      var to = setTimeout(function(){ ctrl.abort(); }, TRIAL_TRY_MS[attempt]);
+      try{
+        var resp = await fetch(TRIAL_ENDPOINT,{method:'POST', body:fd, signal:ctrl.signal});
+        clearTimeout(to);
+        var data = await resp.json().catch(function(){ return {}; });
+        if(!resp.ok || !data.success){ throw new Error(data.error || ('Request failed (status ' + resp.status + ')')); }
+        show(5);
+        if(typeof gtag === 'function'){ gtag('event', 'trial_submitted', { event_category: 'conversion' }); }
+        return;
+      }catch(err){
+        clearTimeout(to);
+        lastErr = err;
+        console.error('Trial send attempt ' + (attempt+1) + ' failed:', err);
+        if(attempt < TRIAL_TRY_MS.length-1){
+          await new Promise(function(res){ setTimeout(res, 2000); });
+        }
+      }
     }
-  });
+    // Every attempt used. Keep the recording — it is the whole point of the screen.
+    $('trial-error-msg').textContent = 'That didn\u2019t go through: ' + ((lastErr && lastErr.message) || 'the connection timed out') + '.';
+    show(6);
+  }
+
+  $('trial-send').addEventListener('click', sendTrial);
+  $('trial-resend').addEventListener('click', sendTrial);
 
   $('trial-retry').addEventListener('click', function(){
     if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
     audioBlob=null;
     show(1);
   });
+
+  // Hooks for closeTrial(): is there something worth warning about, and how to
+  // let go of the microphone. Without these, tapping outside the box silently
+  // binned a finished recording and left the mic light on.
+  window.__bcsTrialBusy = function(){
+    return !!audioBlob || !!(mediaRecorder && mediaRecorder.state === 'recording');
+  };
+  window.__bcsTrialCleanup = function(){
+    try{ if(mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop(); }catch(e){}
+    try{ if(micStream) micStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
+    micStream = null;
+    if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
+  };
 })();
 </script>
 
@@ -1161,7 +1204,17 @@ function bcsTog(c,i){var el=document.getElementById(c),ic=document.getElementByI
 </script>
 <script>
 function openTrial(){var m=document.getElementById('trial-modal');m.classList.add('open');document.body.style.overflow='hidden';setTimeout(function(){var el=document.getElementById('trial-name');if(el){try{el.focus({preventScroll:true});}catch(e){el.focus();}}},60);}
-function closeTrial(){var m=document.getElementById('trial-modal');m.classList.remove('open');document.body.style.overflow='';}
+function closeTrial(){
+  // Guard: never throw away a recording (or leave the microphone running) because
+  // someone tapped just outside the box or brushed the Escape key.
+  try{
+    if(window.__bcsTrialBusy && window.__bcsTrialBusy()){
+      if(!confirm('You have a recording that hasn\u2019t been sent yet. Close anyway and lose it?')) return;
+    }
+    if(window.__bcsTrialCleanup) window.__bcsTrialCleanup();
+  }catch(e){}
+  var m=document.getElementById('trial-modal');m.classList.remove('open');document.body.style.overflow='';
+}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeTrial();});
 </script>
 <script src="closed.js"></script>
