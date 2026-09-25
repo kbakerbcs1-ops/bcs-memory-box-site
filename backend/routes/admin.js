@@ -649,7 +649,7 @@ router.post('/draft/:id/approve', requireAdmin, async (req, res) => {
 '<p style="font-size:15px;color:#6b5d4f;margin-top:6px;">If the button above does not open, copy and paste this web address into your web browser:<br>' +
 '<a href="' + portalUrl + '" style="color:#8b5a2b;word-break:break-all;">' + portalUrl + '</a></p>' +
 '<p>From your story page you can download the Word document and keep it for your family.</p>' +
-'<p>If anything reads wrong or you want me to change something, click <strong>Request a revision</strong> from the same page. Your purchase includes two rounds of revisions.</p>' +
+'<p>If anything reads wrong or you want me to change something, press <strong>Tell me a change</strong> at the bottom of the same page and say it out loud. Your purchase includes two rounds of revisions. When it reads just right, press the green button <strong>Yes — this is my book</strong>.</p>' +
 '<p style="margin-top:28px;">— Ken Baker<br>BCS Memory Box</p>' +
 '</div>';
     await sendEmail(draft.customer_email, subject, html);
