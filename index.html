@@ -1156,8 +1156,17 @@
       if (cont) {
         cont.innerHTML =
           '<p style="font-size:20px;margin:0 0 14px;">Welcome back' + (savedName ? ', ' + savedName : '') + '!</p>' +
-          '<a href="' + portal + '" class="btn-primary" style="display:inline-block;border:none;cursor:pointer;text-decoration:none;">Continue your story &rarr;</a>';
+          '<a href="' + portal + '" class="btn-primary" style="display:inline-block;border:none;cursor:pointer;text-decoration:none;">Continue your story &rarr;</a>' +
+          '<p style="font-size:16px;margin:14px 0 0;"><a href="/" id="return-forget" style="color:inherit;text-decoration:underline;">Not ' + (savedName || 'you') + '? Sign out of this computer</a></p>';
         cont.style.display = 'block';
+        // Audit (Sept 22): on a shared computer the next person must not get a
+        // one-click way into someone else's memoir.
+        var forget = document.getElementById('return-forget');
+        if (forget) forget.onclick = function (ev) {
+          ev.preventDefault();
+          try { ['bcs_story_token', 'bcs_story_name', 'bcs_warmup_done'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e2) {}
+          window.location.replace('/?signed_out=1#return-widget');
+        };
       }
       // Returning visitor on their own device \u2192 show ONE clear action: the
       // Continue button. Hide the section heading, the intro line, and the email
@@ -1170,6 +1179,13 @@
       if (heroLink) { heroLink.textContent = 'Continue your story \u2192'; heroLink.setAttribute('href', portal); }
     }
   } catch (e) { /* storage off — the email box below still works */ }
+  // Just signed out (from here or from the story page): say so plainly.
+  try {
+    if (new URLSearchParams(window.location.search).get('signed_out') === '1' && !localStorage.getItem('bcs_story_token')) {
+      var so = document.getElementById('return-continue');
+      if (so) { so.innerHTML = '<p style="font-size:18px;margin:0;">\u2713 You\u2019re signed out on this computer. Your story is safe.</p>'; so.style.display = 'block'; }
+    }
+  } catch (e) {}
   function setStatus(msg, color){ statusEl.textContent = msg; statusEl.style.color = color || '#2a2520'; }
   async function submit(){
     var email = (emailEl.value || '').trim();

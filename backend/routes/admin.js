@@ -80,10 +80,14 @@ async function requireAdmin(req, res, next) {
 // resource until it expires — not full admin — so a leaked URL is near-useless.
 // ---------------------------------------------------------------------------
 const RESOURCE_URL_TTL_SEC = 12 * 60 * 60; // 12h — long enough to browse, far tighter than a 7-day full-admin token
+// Audit (Sept 22): this used to be derived from ADMIN_PASSWORD, and because the
+// construction is public, one leaked signed URL allowed an OFFLINE guessing
+// attack on the dashboard password. The secret is now independent of the
+// password: RESOURCE_URL_SECRET if set in Render, otherwise random per boot
+// (a restart just means reloading the dashboard to get fresh links).
+const RESOURCE_SECRET = process.env.RESOURCE_URL_SECRET || crypto.randomBytes(32).toString('hex');
 function resourceSecret() {
-  // Derive from the admin password (always set; login depends on it). Rotating
-  // the password simply invalidates outstanding signed URLs, which is fine.
-  return 'bcs-resource-url:' + (process.env.ADMIN_PASSWORD || 'unset');
+  return RESOURCE_SECRET;
 }
 function signResource(kind, id) {
   const exp = Math.floor(Date.now() / 1000) + RESOURCE_URL_TTL_SEC;

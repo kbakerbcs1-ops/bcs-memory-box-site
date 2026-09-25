@@ -8,8 +8,12 @@
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
-  gtag('config', 'G-X4QSEQNERK');
+  // Privacy: this page's address carries the customer's private code (it IS their
+  // login). Report only the bare page to Google, never the ?code part.
+  gtag('config', 'G-X4QSEQNERK', { page_location: location.origin + location.pathname });
 </script>
+<!-- Never pass this page's private address on to the next page or site. -->
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Story — BCS Memory Box</title>
 
@@ -110,6 +114,16 @@ var API_BASE = window.BCS_API_BASE;
 var RECORDING_TITLES = {};
 var PHOTO_CAPTIONS = {};
 var SAVED_SAFE_HTML = '<strong>\u2713 Saved \u2014 and safe.</strong> Tell your stories in any order \u2014 I\u2019ll tie it all together into one flowing memoir at the end. Whenever you\u2019re ready for more, just go back to the homepage and tap <strong>Continue your story</strong> \u2014 you\u2019ll be right back where you left off.';
+
+// Forget this customer on this computer, then leave the page. replace() so the
+// Back button does not return to the private address.
+function bcsSignOut() {
+  try {
+    ['bcs_story_token', 'bcs_story_name', 'bcs_warmup_done'].forEach(function (k) { localStorage.removeItem(k); });
+    ['bcs_followup', 'bcs_fu_chain'].forEach(function (k) { sessionStorage.removeItem(k); });
+  } catch (e) { /* storage off — nothing was remembered */ }
+  window.location.replace('/?signed_out=1#return-widget');
+}
 
 // Read token from query string (?token=xyz)
 function getToken() {
@@ -1122,7 +1136,15 @@ function renderError(msg) {
     }
 
     // Set header
-    document.getElementById('header-welcome').textContent = 'Signed in as ' + data.customer.email;
+    var hw = document.getElementById('header-welcome');
+    hw.textContent = 'Signed in as ' + data.customer.email + ' \u00b7 ';
+    // Audit (Sept 22): on a shared computer the next person must not walk into
+    // this memoir. "Sign out" makes this computer forget the customer.
+    var so = document.createElement('a');
+    so.href = '/'; so.textContent = 'Not you? Sign out';
+    so.style.cssText = 'color:#8b4513;text-decoration:underline;';
+    so.onclick = function (ev) { ev.preventDefault(); bcsSignOut(); };
+    hw.appendChild(so);
 
     // Remember this device so the customer can return with ONE CLICK from the
     // homepage next time — no need to retype their email. Stored locally on

@@ -8,8 +8,12 @@
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
-  gtag('config', 'G-X4QSEQNERK');
+  // Privacy: this page's address carries the customer's private code (it IS their
+  // login). Report only the bare page to Google, never the ?code part.
+  gtag('config', 'G-X4QSEQNERK', { page_location: location.origin + location.pathname });
 </script>
+<!-- Never pass this page's private address on to the next page or site. -->
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>In Their Own Voice — BCS Memory Box</title>
 <meta name="robots" content="noindex">
