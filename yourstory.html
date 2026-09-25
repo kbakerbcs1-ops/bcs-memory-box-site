@@ -362,7 +362,8 @@ function renderPhotoCard(photos) {
     '<p style="font-size:17px;color:#5a4a3a;">Add one or more photographs to go with your story. <span style="color:#8b7a63;">You can pick several at once — name each one after they upload.</span></p>' +
     '<input type="text" id="photo-caption" placeholder="Name and date, e.g. Mom and Dad, Christmas 1975 (optional)" style="width:100%;max-width:460px;padding:12px 14px;font-family:Georgia,serif;font-size:16px;border:1px solid #d4cab5;border-radius:4px;margin-bottom:6px;" />' +
     '<input type="file" id="photo-file" accept="image/*" multiple style="display:none;" />' +
-    '<button class="btn btn-large" id="photo-btn" style="margin:14px auto 0;">📷 Add photos</button>' +
+    // Once a photo is in, say so on the button itself, so nobody wonders how to add the next one.
+    '<button class="btn btn-large" id="photo-btn" data-label="' + (photos.length > 0 ? '📷 Add another photo' : '📷 Add photos') + '" style="margin:14px auto 0;">' + (photos.length > 0 ? '📷 Add another photo' : '📷 Add photos') + '</button>' +
     '<p id="photo-status" style="margin-top:12px;color:#5a4a3a;font-size:14px;"></p>' +
   '</div>';
   html += '</div>';
@@ -1856,10 +1857,10 @@ function bindPhotoHandler() {
     }
 
     // Nothing uploaded.
-    statusEl.textContent = 'Your photo' + (total > 1 ? 's' : '') + ' didn’t upload yet — please tap “📷 Add photos” to try again, or email us if it keeps happening.';
+    statusEl.textContent = 'Your photo' + (total > 1 ? 's' : '') + ' didn’t upload yet — please tap “' + (btn.getAttribute('data-label') || '📷 Add photos') + '” to try again, or email us if it keeps happening.';
     statusEl.style.color = '#c0392b';
     btn.disabled = false;
-    btn.textContent = '📷 Add photos';
+    btn.textContent = btn.getAttribute('data-label') || '📷 Add photos';
     fileInput.value = ''; // allow retry
   });
 
