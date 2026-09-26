@@ -234,48 +234,93 @@ function formatSize(bytes) {
 // Render the appropriate UI for a given customer status
 // ---------------------------------------------------------------------------
 // The customer guide film. Lives here only — behind the customer's own link,
-// so nobody sees it until they are in the system. Collapsed until asked for,
-// so it never pushes the record button down the page.
+// so nobody sees it until they are in the system. Three versions, matched to
+// the customer's computer: the microphone box differs between Safari and
+// Chrome, and the photo picker differs between Mac and Windows.
+// Chapter start times (seconds) for the seven parts, plus where the last one ends.
+var BCS_GUIDES = {
+  'mac-safari': { src: 'guide-mac-safari.mp4', parts: [0, 58.6, 116.0, 171.8, 211.9, 251.7, 309.7, 379.2] },
+  'mac-chrome': { src: 'guide-mac-chrome.mp4', parts: [0, 58.0, 115.4, 171.2, 211.3, 251.1, 309.1, 378.6] },
+  'windows':    { src: 'guide-windows.mp4',    parts: [0, 58.0, 115.4, 172.6, 212.7, 252.5, 310.5, 380.0] }
+};
+var BCS_PARTS = ['Your first story', 'Coming back any time', 'Adding photographs',
+  'Finishing your first draft', 'Reading your draft', 'Asking for a change', 'Approving your book'];
+
+// Which version fits this computer. iPads report themselves as Macs; they get the Mac film.
+function bcsGuideKind() {
+  var ua = navigator.userAgent || '';
+  if (/Windows/i.test(ua)) return 'windows';
+  var chromeLike = /Chrome|CriOS|Edg\//.test(ua) && !/OPR\//.test(ua);
+  return chromeLike ? 'mac-chrome' : 'mac-safari';
+}
+function bcsIsChromeLike() { return /Chrome|CriOS|Edg\//.test(navigator.userAgent || ''); }
+
 function renderGuideCard(firstTime) {
   var lead = firstTime
-    ? 'New here? This shows you the whole thing in a minute and a half.'
-    : 'Lost your place? This shows you the whole thing in a minute and a half.';
+    ? 'New here? This walks you through everything, step by step, in about six minutes.'
+    : 'Lost your place? Watch the whole guide, or just the part you need.';
+  var parts = '';
+  for (var i = 0; i < BCS_PARTS.length; i++) {
+    parts += '<li style="margin:4px 0;"><a href="#" onclick="bcsPlayGuide(' + (i + 1) + ');return false;" style="color:#8b5a2b;">' +
+      (i + 1) + '. ' + BCS_PARTS[i] + '</a></li>';
+  }
   return '<div class="card" id="guide-card" style="background:#faf5ea;border:1px solid #e8dfc9;">' +
       '<div class="eyebrow">A short guide</div>' +
       '<h2 style="margin-top:2px;">How to use your Memory Box</h2>' +
-      '<p style="margin-bottom:12px;">' + lead + ' Recording, adding photographs, reading your draft, and approving your book.</p>' +
-      '<div id="guide-slot">' +
-        '<a href="#" onclick="bcsPlayGuide();return false;" style="display:block;max-width:520px;position:relative;text-decoration:none;">' +
-          '<img src="customer-guide-thumb.jpg" alt="Watch the guide" style="width:100%;border-radius:10px;display:block;border:1px solid #e0d6c2;">' +
-          '<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:74px;height:74px;border-radius:50%;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;">' +
-            '<span style="border-left:22px solid #fff;border-top:14px solid transparent;border-bottom:14px solid transparent;margin-left:6px;"></span>' +
-          '</span>' +
-        '</a>' +
-        '<button class="btn" onclick="bcsPlayGuide();return false;" style="margin-top:12px;">\u25B6 Play the guide (1\u00BD minutes)</button>' +
-      '</div>' +
+      '<p style="margin-bottom:12px;">' + lead + '</p>' +
+      '<a href="#" onclick="bcsPlayGuide(0);return false;" style="display:block;max-width:520px;position:relative;text-decoration:none;">' +
+        '<img src="guide-thumb.jpg" alt="Watch the guide" style="width:100%;border-radius:10px;display:block;border:1px solid #e0d6c2;">' +
+        '<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:74px;height:74px;border-radius:50%;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;">' +
+          '<span style="border-left:22px solid #fff;border-top:14px solid transparent;border-bottom:14px solid transparent;margin-left:6px;"></span>' +
+        '</span>' +
+      '</a>' +
+      '<button class="btn" onclick="bcsPlayGuide(0);return false;" style="margin-top:12px;">▶ Play the whole guide (6 minutes)</button>' +
+      '<p style="margin:16px 0 4px;font-size:16px;color:#5a4a3a;">Or watch just one part:</p>' +
+      '<ol style="list-style:none;padding:0;margin:0;font-size:17px;">' + parts + '</ol>' +
     '</div>';
 }
 
-// Swap the picture for a real player. Nothing downloads until this is pressed.
-function bcsPlayGuide() {
-  var slot = document.getElementById('guide-slot');
-  if (!slot) return;
-  if (!slot.getAttribute('data-playing')) {
-    slot.setAttribute('data-playing', '1');
-    slot.innerHTML = '<video controls playsinline preload="metadata" ' +
-      'poster="customer-guide-thumb.jpg" src="customer-guide.mp4" ' +
-      'style="width:100%;max-width:720px;border-radius:10px;display:block;background:#000;"></video>';
-  }
-  var v = slot.querySelector('video');
-  if (v) { try { v.play(); } catch (e) {} }
-  var card = document.getElementById('guide-card');
-  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// One pop-up player for everything, so any "Show me how" link works on any page.
+// part 0 = the whole film; 1–7 = just that part (it stops at the end of the part).
+function bcsOpenPlayer(src, start, stopAt, title) {
+  bcsClosePlayer();
+  var o = document.createElement('div');
+  o.id = 'bcs-player';
+  o.style.cssText = 'position:fixed;inset:0;background:rgba(20,16,12,.86);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+  o.innerHTML =
+    '<div style="width:100%;max-width:960px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<div style="color:#fff;font-size:18px;">' + escapeHtml(title || '') + '</div>' +
+        '<button class="btn" onclick="bcsClosePlayer()" style="background:#fff;color:#2a2520;font-size:18px;padding:10px 20px;">✕ Close</button>' +
+      '</div>' +
+      '<video controls playsinline preload="auto" src="' + src + '" style="width:100%;border-radius:10px;background:#000;display:block;"></video>' +
+    '</div>';
+  o.addEventListener('click', function (e) { if (e.target === o) bcsClosePlayer(); });
+  document.body.appendChild(o);
+  var v = o.querySelector('video');
+  v.addEventListener('loadedmetadata', function () { try { v.currentTime = start || 0; } catch (e) {} try { v.play(); } catch (e) {} }, { once: true });
+  if (stopAt) v.addEventListener('timeupdate', function () { if (v.currentTime >= stopAt) { v.pause(); v.currentTime = stopAt; } });
+}
+function bcsClosePlayer() {
+  var o = document.getElementById('bcs-player');
+  if (o) { var v = o.querySelector('video'); if (v) v.pause(); o.remove(); }
+}
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') bcsClosePlayer(); });
+
+function bcsPlayGuide(part) {
+  var g = BCS_GUIDES[bcsGuideKind()];
+  if (!part) { bcsOpenPlayer(g.src, 0, 0, 'How to use your Memory Box'); return; }
+  bcsOpenPlayer(g.src, g.parts[part - 1], g.parts[part], 'Part ' + part + ': ' + BCS_PARTS[part - 1]);
+}
+// Shown when the microphone has been blocked by mistake.
+function bcsPlayRescue() {
+  bcsOpenPlayer(bcsIsChromeLike() ? 'rescue-chrome.mp4' : 'rescue-safari.mp4', 0, 0, 'Turning the microphone back on');
 }
 
 // A quiet "show me" link for the individual steps.
-function guideLink(text) {
+function guideLink(text, part) {
   return '<p style="margin:10px 0 0;font-size:15px;">' +
-    '<a href="#" onclick="bcsPlayGuide();return false;" style="color:#8b5a2b;">' + text + '</a></p>';
+    '<a href="#" onclick="bcsPlayGuide(' + (part || 0) + ');return false;" style="color:#8b5a2b;">▶ ' + text + '</a></p>';
 }
 
 function renderStatusBar(status) {
@@ -343,7 +388,7 @@ function renderPhotoCard(photos) {
   html += '<div class="card">';
   html += '<h2>Add photographs <span style="font-weight:normal;color:#888;font-size:17px;">(optional)</span></h2>';
   html += '<p>Have a favorite picture for your story? Add it here. Press the button and choose a picture from your computer or tablet. There\'s nothing to figure out; Ken places the photos into your memoir for you.</p>';
-  html += guideLink('Show me how to add a photograph');
+  html += guideLink('Show me how to add a photograph', 3);
   if (photos.length > 0) {
     html += '<div class="photo-grid">';
     photos.forEach(function(p) {
@@ -427,6 +472,7 @@ function renderSuggestedQuestion(data) {
     '<div class="eyebrow" id="sq-eyebrow">Something to talk about</div>' +
     '<p id="sq-text" style="font-size:23px;line-height:1.4;color:#2a2520;margin:6px 0 20px;">' + escapeHtml(q) + '</p>' +
     '<button class="btn btn-large" id="sq-record">● Record your answer</button>' +
+    guideLink('Show me how to record', 1) +
     '<div style="margin-top:14px;">' +
       '<button type="button" id="sq-another" style="background:none;border:none;color:#8b5a2b;cursor:pointer;font-size:15px;text-decoration:underline;padding:0;">Show me a different question</button>' +
       '<span style="color:#c9bda3;margin:0 9px;">·</span>' +
@@ -558,7 +604,7 @@ function renderRecordingPage(data) {
     html += '<p id="done-status" style="text-align:center;color:#999;font-size:13px;margin-top:8px;">' +
             'When you’ve recorded everything you want, this turns your recordings into a written draft for you to read. ' +
             'Nothing is final — you’ll be able to read it, ask for changes, or add more. Usually takes 15–30 minutes.' +
-            '</p>';
+            '</p>' + '<div style="text-align:center;">' + guideLink('Show me what happens next', 4) + '</div>';
   }
 
   return html;
@@ -643,6 +689,8 @@ function renderDecisionCard(memoir, customer) {
       '<button class="btn btn-large" id="approve-btn" style="background:#2a6b3a;">\u2713 Yes &mdash; this is my book</button>' +
       '<p id="approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
       '<p class="muted" style="margin-top:12px;font-size:13px;">Nothing changes after you approve without you.</p>' +
+      guideLink('Show me how to ask for a change', 6) +
+      guideLink('Show me how to approve my book', 7) +
     '</div>';
 }
 
@@ -761,7 +809,7 @@ function renderApproveCard(memoir) {
       '<p>When it reads just the way you want, approve it. That tells us it’s final and ready to become your hardcover — nothing changes after this without you.</p>' +
       '<button class="btn btn-large" id="approve-btn" style="background:#2a6b3a;">✓ This is my book — approve it</button>' +
       '<p id="approve-status" class="muted" style="margin-top:10px;font-size:14px;"></p>' +
-      guideLink('Show me what approving does') +
+      guideLink('Show me what approving does', 7) +
     '</div>';
 }
 
@@ -1492,7 +1540,9 @@ function bcsMicHelpHtml(err, hasUpload) {
     return 'I couldn’t find a microphone. If this computer doesn’t have one, please try a tablet instead.' + uploadBit + emailBit;
   }
   if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
-    return 'It looks like the microphone is turned off for this page. To turn it on: find the little icon just to the left of the web address at the very top of your screen, tap it, and choose <strong>Allow</strong> — then press the button again.' + uploadBit + emailBit;
+    return 'It looks like the microphone is turned off for this page. It’s easy to fix — ' +
+      '<a href="#" onclick="bcsPlayRescue();return false;" style="color:#8b5a2b;font-weight:bold;">\u25B6 watch this short video (40 seconds)</a>, ' +
+      'then press the button again.' + uploadBit + emailBit;
   }
   return 'I couldn’t reach the microphone. Please press the button and try once more.' + emailBit;
 }
@@ -2116,6 +2166,7 @@ function renderFollowUp(data){
   html += '<button class="btn btn-large" id="fu-finish">I’m done — finish my book</button>';
   html += '<p id="fu-finish-status" class="muted" style="text-align:center;font-size:13px;margin-top:8px;"></p>';
   html += '<p style="text-align:center;margin-top:10px;"><a href="#" id="fu-skip" style="color:#8b5a2b;">Skip these and finish my book as it is</a></p>';
+  html += '<div style="text-align:center;">' + guideLink('Show me how this works', 4) + '</div>';
   html += '</div>';
   // A customer sitting on the follow-up questions still needs a way to add a
   // photograph — without this they are stuck (the photo uploader used to exist

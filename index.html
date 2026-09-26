@@ -448,9 +448,19 @@
         }
         .record-bar .rb-btn:hover { background: #fff; color: #2a1f15; transform: translateY(-1px); text-decoration: none; }
         .record-bar .rb-btn .dot { color: #c0392b; margin-right: 7px; font-size: 13px; }
+        .record-bar .rb-right { display: flex; align-items: center; gap: 16px; }
+        .record-bar .rb-open { color: #fff; font-family: 'Open Sans', sans-serif; font-weight: 700; font-size: 15px; text-decoration: underline; white-space: nowrap; }
+        .record-bar .rb-open:hover { color: var(--beige); }
         @media (max-width: 540px) {
             .record-bar .rb-brand b { display: none; }
             .record-bar .rb-btn { font-size: 14px; padding: 10px 16px; }
+            .record-bar .rb-open { font-size: 14px; }
+            .record-bar .rb-right { gap: 10px; }
+        }
+        @media (max-width: 440px) {
+            .record-bar { padding: 8px 12px; gap: 8px; }
+            .record-bar .rb-btn { font-size: 13px; padding: 9px 12px; }
+            .record-bar .rb-open { font-size: 13px; }
         }
 
         /* ===== TRY IT FREE POP-UP ===== */
@@ -474,7 +484,11 @@
         <img src="bcs-logo.png" alt="BCS Memory Box logo">
         <b>BCS Memory Box</b>
     </a>
-    <a class="rb-btn" href="#" onclick="openTrial();return false;"><span class="dot">&#9679;</span>Record 90 seconds — free</a>
+    <div class="rb-right">
+        <!-- Customers coming back must not land on the free sample by mistake. -->
+        <a class="rb-open" id="rb-open" href="#return-widget">Open my story</a>
+        <a class="rb-btn" href="#" onclick="openTrial();return false;"><span class="dot">&#9679;</span>Record 90 seconds — free</a>
+    </div>
 </div>
 
 <!-- message-first hero styles -->
@@ -1177,6 +1191,8 @@
       if (intro) intro.style.display = 'none';
       if (emailEl && emailEl.parentNode) emailEl.parentNode.style.display = 'none';
       if (heroLink) { heroLink.textContent = 'Continue your story \u2192'; heroLink.setAttribute('href', portal); }
+      var rbOpen = document.getElementById('rb-open');
+      if (rbOpen) rbOpen.setAttribute('href', portal);
     }
   } catch (e) { /* storage off — the email box below still works */ }
   // Just signed out (from here or from the story page): say so plainly.

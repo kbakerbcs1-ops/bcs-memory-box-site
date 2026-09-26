@@ -56,7 +56,7 @@ function storyLinkEmail({ name, portalUrl, firstTime }) {
   const guideLine = firstTime
     ? '<p style="margin:18px 0 0;font-size:15px;color:#5a534c;">'
       + '<strong>Not sure where to start?</strong> There is a short guide waiting at the top of '
-      + 'your story page \u2014 a minute and a half, and it shows you the whole thing.</p>'
+      + 'your story page \u2014 it walks you through everything, step by step. Watch it all, or just the part you need.</p>'
     : '';
 
   const ignoreLine = firstTime
